@@ -1,0 +1,24 @@
+# General ignores
+*.log
+*.pid
+*.sock
+*.db
+*.tmp
+*.lock
+
+# Maven & Gradle
+target/
+build/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+
+# OS junk files
+.DS_Store
+Thumbs.db
+
+# Docker volume folders (this is your case)
+**/volume-data/
+**/mysql_keycloak_data/
