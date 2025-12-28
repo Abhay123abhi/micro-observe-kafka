@@ -33,7 +33,7 @@ public class OrderService {
             order.setSkuCode(orderRequest.skuCode());
             orderRepository.save(order);
 
-            // send message to kafka topic
+//             send message to kafka topic
             var orderPlacedEvent = new OrderPlacedEvent(order.getOrderNumber(), orderRequest.userDetails()
                     .email(),
                                                         orderRequest.userDetails()
