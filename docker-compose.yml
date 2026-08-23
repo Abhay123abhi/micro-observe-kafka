@@ -44,6 +44,7 @@ services:
     environment:
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
       KAFKA_NODE_ID: 1
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx384m
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker:29093
@@ -58,7 +59,7 @@ services:
     volumes: [kafka-data:/var/lib/kafka/data]
     networks: [backend]
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:29092 --list >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server broker:29092 --list >/dev/null 2>&1"]
       interval: 10s
       timeout: 10s
       retries: 12
