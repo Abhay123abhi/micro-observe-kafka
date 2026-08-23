@@ -13,6 +13,10 @@ import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.Year;
+import java.time.format.DateTimeFormatter;
 
 @Service
 public class NotificationService {
@@ -31,36 +35,36 @@ public class NotificationService {
     }
 
     @KafkaListener(topics = "order-placed")
-    public void listen(OrderPlacedEvent orderPlacedEvent){
-        log.info("Got Message from order-placed topic {}", orderPlacedEvent);
+    public void listen(OrderPlacedEvent orderPlacedEvent) {
+        log.info("Received order confirmation event for order {}", orderPlacedEvent.getOrderNumber());
         MimeMessagePreparator messagePreparator = mimeMessage -> {
-
-            MimeMessageHelper messageHelper =
-                    new MimeMessageHelper(mimeMessage, true, "UTF-8");
+            var messageHelper = new MimeMessageHelper(mimeMessage, StandardCharsets.UTF_8.name());
 
             messageHelper.setFrom(properties.from());
             messageHelper.setTo(orderPlacedEvent.getEmail().toString());
-            messageHelper.setSubject(
-                    "🎉 Order Confirmed | " + orderPlacedEvent.getOrderNumber()
-            );
+            messageHelper.setSubject("Your order is confirmed | " + orderPlacedEvent.getOrderNumber());
 
-            // Prepare template variables
-            Context context = new Context();
+            var context = new Context();
             context.setVariable("firstName", orderPlacedEvent.getFirstName());
             context.setVariable("lastName", orderPlacedEvent.getLastName());
             context.setVariable("orderNumber", orderPlacedEvent.getOrderNumber());
+            context.setVariable("skuCode", orderPlacedEvent.getSkuCode());
+            context.setVariable("quantity", orderPlacedEvent.getQuantity());
+            context.setVariable("totalAmount", orderPlacedEvent.getTotalAmount());
+            if (orderPlacedEvent.getPlacedAt() != null) {
+                var placedAt = LocalDateTime.parse(orderPlacedEvent.getPlacedAt().toString())
+                        .format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm"));
+                context.setVariable("placedAt", placedAt);
+            }
+            context.setVariable("year", Year.now().getValue());
 
-            // Load HTML template
-            String htmlContent =
-                    templateEngine.process("order-placed", context);
-
-            messageHelper.setText(htmlContent, true);
+            messageHelper.setText(templateEngine.process("order-placed", context), true);
         };
         try {
             javaMailSender.send(messagePreparator);
             log.info("Order notification email sent for order {}", orderPlacedEvent.getOrderNumber());
         } catch (MailException e) {
-            log.error("Exception occurred when sending mail", e);
+            log.error("Failed to send order confirmation for order {}", orderPlacedEvent.getOrderNumber(), e);
             throw new IllegalStateException("Failed to send order notification", e);
         }
     }

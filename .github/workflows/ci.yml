@@ -25,3 +25,17 @@ jobs:
 
       - name: Verify reactor
         run: sh ./mvnw --batch-mode --no-transfer-progress verify
+
+      - name: Validate Docker Compose configuration
+        run: |
+          export MYSQL_ROOT_PASSWORD="$(openssl rand -hex 24)"
+          export KEYCLOAK_ADMIN_PASSWORD="$(openssl rand -hex 24)"
+          export KEYCLOAK_CLIENT_SECRET="$(openssl rand -hex 24)"
+          export GRAFANA_ADMIN_PASSWORD="$(openssl rand -hex 24)"
+          export SMTP_USERNAME="ci@example.invalid"
+          export SMTP_PASSWORD="$(openssl rand -hex 24)"
+          export NOTIFICATION_FROM="ci@example.invalid"
+          docker compose --profile observability --profile tools --profile ai config --quiet
+
+      - name: Build application container
+        run: docker build --build-arg SERVICE=product-service --tag micro-observe-product:ci .

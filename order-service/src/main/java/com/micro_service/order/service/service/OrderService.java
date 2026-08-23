@@ -37,9 +37,17 @@ public class OrderService {
             orderRepository.save(order);
 
             var user = orderRequest.userDetails();
-            var orderPlacedEvent = new OrderPlacedEvent(
-                    order.getOrderNumber(), user.email(), user.firstName(), user.lastName());
-            log.info("Sending OrderPlacedEvent {} to Kafka", orderPlacedEvent);
+            var orderPlacedEvent = OrderPlacedEvent.newBuilder()
+                    .setOrderNumber(order.getOrderNumber())
+                    .setEmail(user.email())
+                    .setFirstName(user.firstName())
+                    .setLastName(user.lastName())
+                    .setSkuCode(order.getSkuCode())
+                    .setQuantity(order.getQuantity())
+                    .setTotalAmount(order.getPrice().toPlainString())
+                    .setPlacedAt(order.getOrderDate().toString())
+                    .build();
+            log.info("Publishing order confirmation event for order {}", order.getOrderNumber());
             kafkaTemplate.sendDefault(orderPlacedEvent);
             return new OrderResponse(order.getOrderNumber());
         }
