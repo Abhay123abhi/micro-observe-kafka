@@ -15,9 +15,16 @@ public class RuleBasedIncidentInvestigator implements IncidentInvestigator {
         var findings = new ArrayList<String>();
         evidence.metrics().forEach((metric, value) -> findings.add(metric + "=" + value));
         findings.addAll(evidence.recentErrors().stream().limit(3).toList());
+        evidence.recentDeployments().stream().findFirst().ifPresent(deployment ->
+                findings.add("recent_deployment version=%s commit=%s deployedAt=%s".formatted(
+                        deployment.version(), deployment.gitCommit(), deployment.deployedAt())));
 
         String rootCause = evidence.recentErrors().stream().findFirst()
-                .orElse("The alert condition indicates abnormal service behavior; inspect its telemetry.");
+                .orElseGet(() -> evidence.recentDeployments().stream().findFirst()
+                        .map(deployment -> "A recent deployment (%s) is correlated with the incident. "
+                                + "Review its change summary and commit; correlation is not proof of causation."
+                                .formatted(deployment.version()))
+                        .orElse("The alert condition indicates abnormal service behavior; inspect its telemetry."));
 
         return new IncidentAnalysis(
                 evidence.alertName() + " detected in " + evidence.service(),
@@ -28,6 +35,6 @@ public class RuleBasedIncidentInvestigator implements IncidentInvestigator {
                 evidence.affectedDependencies(),
                 List.of("Inspect recent error logs and slow traces.",
                         "Review service latency, error rate, and database connection metrics.",
-                        "Check the most recent deployment and dependency health."));
+                        "Review the correlated deployment before considering rollback."));
     }
 }
