@@ -10,5 +10,6 @@ public record IncidentEvidence(
         Map<String, Double> metrics,
         List<String> recentErrors,
         List<String> traceSummaries,
-        List<String> affectedDependencies) {
+        List<String> affectedDependencies,
+        List<DeploymentEvidence> recentDeployments) {
 }
