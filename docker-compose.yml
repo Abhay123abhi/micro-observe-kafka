@@ -38,7 +38,7 @@ services:
       retries: 12
 
   broker:
-    image: confluentinc/cp-kafka:7.6.0
+    image: confluentinc/cp-kafka:7.9.9
     restart: unless-stopped
     ports: ["${BIND_ADDRESS:-127.0.0.1}:9092:9092"]
     environment:
