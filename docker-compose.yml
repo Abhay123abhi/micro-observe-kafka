@@ -32,7 +32,7 @@ services:
       - ./ops/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks: [backend]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready --username=observe --database=postgres"]
+      test: ["CMD-SHELL", "pg_isready -U observe -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 12
