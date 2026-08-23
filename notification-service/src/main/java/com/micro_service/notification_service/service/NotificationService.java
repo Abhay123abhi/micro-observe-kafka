@@ -1,8 +1,8 @@
 package com.micro_service.notification_service.service;
 
 import com.techie.microservices.order.event.OrderPlacedEvent;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
@@ -15,15 +15,20 @@ import org.thymeleaf.context.Context;
 
 
 @Service
-@Slf4j
-@RequiredArgsConstructor
 public class NotificationService {
+
+    private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
 
     private final JavaMailSender javaMailSender;
     private final TemplateEngine templateEngine;
 
     @Value("${notification.mail.from}")
     private String senderAddress;
+
+    public NotificationService(JavaMailSender javaMailSender, TemplateEngine templateEngine) {
+        this.javaMailSender = javaMailSender;
+        this.templateEngine = templateEngine;
+    }
 
     @KafkaListener(topics = "order-placed")
     public void listen(OrderPlacedEvent orderPlacedEvent){
