@@ -76,6 +76,16 @@ public class Routes {
     }
 
     @Bean
+    public RouterFunction<ServerResponse> deploymentServiceRoute() {
+        return GatewayRouterFunctions.route("deployment_events")
+                .route(RequestPredicates.path("/api/deployments")
+                        .and(RequestPredicates.method(HttpMethod.POST)), HandlerFunctions.http())
+                .before(uri(services.incident().url()))
+                .filter(circuitBreaker("deploymentEventCircuitBreaker", URI.create("forward:/fallbackRoute")))
+                .build();
+    }
+
+    @Bean
     public RouterFunction<ServerResponse> fallbackRoute() {
         return route("fallbackRoute")
                 .GET("/fallbackRoute", request -> ServerResponse.status(HttpStatus.SERVICE_UNAVAILABLE).body("Service Unavailable, please try again later"))
