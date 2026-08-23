@@ -160,6 +160,32 @@ AI_ENABLED=false
 AI_CHAT_PROVIDER=none
 ```
 
+### Free local model with Ollama
+
+Install Ollama on the Windows host, then pull a small model:
+
+```powershell
+ollama pull qwen2.5:1.5b
+ollama run qwen2.5:1.5b "Reply only with: Ollama ready"
+```
+
+For a Dockerized analyzer on Windows, set the following in `.env`:
+
+```dotenv
+AI_ENABLED=true
+AI_CHAT_PROVIDER=openai
+OPENAI_API_KEY=ollama
+OPENAI_BASE_URL=http://host.docker.internal:11434
+OPENAI_CHAT_BASE_URL=http://host.docker.internal:11434/v1
+AI_MODEL=qwen2.5:1.5b
+```
+
+Ollama ignores the placeholder key; it is only required by the OpenAI-compatible
+Spring AI client. The model and all evidence remain on the local machine. Use
+`llama3.2:1b` instead if memory is tight; it is smaller but less capable.
+
+### OpenAI
+
 To use OpenAI through Spring AI:
 
 ```dotenv
@@ -169,8 +195,7 @@ OPENAI_API_KEY=your-key
 AI_MODEL=gpt-5-mini
 ```
 
-An OpenAI-compatible provider can be used by setting `OPENAI_BASE_URL` and the
-provider's model name. Restart the analyzer after changing these values:
+Restart the analyzer after changing provider values:
 
 ```bash
 docker compose up --build -d ai-incident-analyzer
@@ -288,9 +313,10 @@ incident.
 
 **No AI request is made**
 
-Confirm `AI_ENABLED=true`, `AI_CHAT_PROVIDER=openai`, and a valid provider key.
-When provider configuration fails, the analyzer falls back to the rule-based
-implementation.
+Confirm `AI_ENABLED=true`, `AI_CHAT_PROVIDER=openai`, and a running provider.
+For local Ollama, run `ollama list` and verify that the analyzer can reach
+`host.docker.internal:11434`. When provider configuration fails, the analyzer
+falls back to the rule-based implementation.
 
 **No email arrives**
 
