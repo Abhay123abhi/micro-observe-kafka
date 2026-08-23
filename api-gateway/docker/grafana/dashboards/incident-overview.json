@@ -1,0 +1,89 @@
+{
+  "uid": "incident-lens-overview",
+  "title": "IncidentLens - Incident Investigation",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Active incidents",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "incident_active", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "title": "Analyzed incidents",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(incident_analyzed_total)", "refId": "A" }]
+    },
+    {
+      "id": 3,
+      "title": "Incident emails delivered",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(incident_notification_sent_total)", "refId": "A" }]
+    },
+    {
+      "id": 4,
+      "title": "AI analysis failures",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(incident_analysis_failure_total)", "refId": "A" }]
+    },
+    {
+      "id": 5,
+      "title": "Service request rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum by(job)(rate(http_server_requests_seconds_count[5m]))", "legendFormat": "{{job}}", "refId": "A" }]
+    },
+    {
+      "id": 6,
+      "title": "Service P95 latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "histogram_quantile(0.95,sum by(le,job)(rate(http_server_requests_seconds_bucket[5m])))", "legendFormat": "{{job}}", "refId": "A" }]
+    },
+    {
+      "id": 7,
+      "title": "HTTP 5xx errors",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum by(job)(rate(http_server_requests_seconds_count{status=~\"5..\"}[5m]))", "legendFormat": "{{job}}", "refId": "A" }]
+    },
+    {
+      "id": 8,
+      "title": "Active database connections",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum by(job)(hikaricp_connections_active)", "legendFormat": "{{job}}", "refId": "A" }]
+    },
+    {
+      "id": 9,
+      "title": "Recent incident investigations",
+      "type": "table",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 21 },
+      "datasource": { "type": "postgres", "uid": "incident-postgres" },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT detected_at AS time, service, alert_name, status, severity, title, confidence, probable_root_cause FROM incidents ORDER BY detected_at DESC LIMIT 50",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

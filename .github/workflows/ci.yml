@@ -9,12 +9,25 @@ permissions:
   contents: read
 
 jobs:
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Reject vulnerable dependency changes
+        uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: high
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Java 25
         uses: actions/setup-java@v5
@@ -28,14 +41,13 @@ jobs:
 
       - name: Validate Docker Compose configuration
         run: |
-          export MYSQL_ROOT_PASSWORD="$(openssl rand -hex 24)"
-          export KEYCLOAK_ADMIN_PASSWORD="$(openssl rand -hex 24)"
-          export KEYCLOAK_CLIENT_SECRET="$(openssl rand -hex 24)"
+          export POSTGRES_PASSWORD="$(openssl rand -hex 24)"
           export GRAFANA_ADMIN_PASSWORD="$(openssl rand -hex 24)"
           export SMTP_USERNAME="ci@example.invalid"
           export SMTP_PASSWORD="$(openssl rand -hex 24)"
           export NOTIFICATION_FROM="ci@example.invalid"
-          docker compose --profile observability --profile tools --profile ai config --quiet
+          export ALERT_EMAIL_TO="operations@example.invalid"
+          docker compose --profile tools config --quiet
 
       - name: Build application container
-        run: docker build --build-arg SERVICE=product-service --tag micro-observe-product:ci .
+        run: docker build --build-arg SERVICE=ai-incident-analyzer --tag observe-ai-analyzer:ci .

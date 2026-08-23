@@ -5,6 +5,7 @@ import org.springframework.cloud.gateway.server.mvc.handler.GatewayRouterFunctio
 import org.springframework.cloud.gateway.server.mvc.handler.HandlerFunctions;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.servlet.function.RequestPredicates;
 import org.springframework.web.servlet.function.RouterFunction;
@@ -24,25 +25,6 @@ public class Routes {
 
     public Routes(ServiceProperties services) {
         this.services = services;
-    }
-
-    @Bean
-    public RouterFunction<ServerResponse> productServiceRoute() {
-        return GatewayRouterFunctions.route("product_service")
-                .route(RequestPredicates.path("/api/product"), HandlerFunctions.http())
-                .before(uri(services.product().url()))
-                .filter(circuitBreaker("productServiceCircuitBreaker", URI.create("forward:/fallbackRoute")))
-                .build();
-    }
-
-    @Bean
-    public RouterFunction<ServerResponse> productServiceSwaggerRoute() {
-        return GatewayRouterFunctions.route("product_service_swagger")
-                .route(RequestPredicates.path("/aggregate/product-service/v3/api-docs"), HandlerFunctions.http())
-                .before(uri(services.product().url()))
-                .filter(circuitBreaker("productServiceSwaggerCircuitBreaker", URI.create("forward:/fallbackRoute")))
-                .filter(setPath("/api-docs"))
-                .build();
     }
 
     @Bean
@@ -80,6 +62,16 @@ public class Routes {
                 .before(uri(services.inventory().url()))
                 .filter(circuitBreaker("inventoryServiceSwaggerCircuitBreaker", URI.create("forward:/fallbackRoute")))
                 .filter(setPath("/api-docs"))
+                .build();
+    }
+
+    @Bean
+    public RouterFunction<ServerResponse> incidentServiceRoute() {
+        return GatewayRouterFunctions.route("incident_analyzer")
+                .route(RequestPredicates.path("/api/incidents/**")
+                        .and(RequestPredicates.method(HttpMethod.GET)), HandlerFunctions.http())
+                .before(uri(services.incident().url()))
+                .filter(circuitBreaker("incidentAnalyzerCircuitBreaker", URI.create("forward:/fallbackRoute")))
                 .build();
     }
 

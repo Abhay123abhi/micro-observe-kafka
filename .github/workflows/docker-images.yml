@@ -18,14 +18,14 @@ jobs:
       matrix:
         service:
           - api-gateway
-          - product-service
           - inventory-service
           - order-service
+          - ai-incident-analyzer
           - notification-service
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -39,7 +39,7 @@ jobs:
 
       - name: Resolve image name
         id: image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/micro-observe-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/incident-lens-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
 
       - name: Build and publish
         uses: docker/build-push-action@v7

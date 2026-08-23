@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: incident-lens
+    orgId: 1
+    folder: IncidentLens
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
