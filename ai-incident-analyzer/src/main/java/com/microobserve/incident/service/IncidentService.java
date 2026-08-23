@@ -1,0 +1,91 @@
+package com.microobserve.incident.service;
+
+import com.microobserve.incident.api.AlertmanagerWebhook;
+import com.microobserve.incident.config.IncidentProperties;
+import com.microobserve.incident.model.IncidentEvent;
+import com.microobserve.incident.model.IncidentRecord;
+import com.microobserve.incident.model.IncidentStatus;
+import com.microobserve.incident.model.InvestigationRequested;
+import com.microobserve.incident.repository.IncidentRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Gauge;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+public class IncidentService {
+
+    private final IncidentRepository repository;
+    private final OutboxService outbox;
+    private final IncidentProperties properties;
+    private final MeterRegistry meters;
+
+    public IncidentService(IncidentRepository repository, OutboxService outbox,
+                           IncidentProperties properties, MeterRegistry meters) {
+        this.repository = repository;
+        this.outbox = outbox;
+        this.properties = properties;
+        this.meters = meters;
+        Gauge.builder("incident.active", repository,
+                        value -> value.countByStatusNot(IncidentStatus.RESOLVED))
+                .description("Number of incidents that have not been resolved")
+                .register(meters);
+    }
+
+    @Transactional
+    public String receive(AlertmanagerWebhook.Alert alert) {
+        String fingerprint = fingerprint(alert);
+        if ("resolved".equalsIgnoreCase(alert.status())) {
+            return resolve(fingerprint);
+        }
+
+        var existing = repository.findByFingerprintAndStatusNot(fingerprint, IncidentStatus.RESOLVED);
+        if (existing.isPresent()) {
+            meters.counter("incident.duplicate", "service", alert.service()).increment();
+            return existing.get().id();
+        }
+
+        String id = UUID.randomUUID().toString();
+        repository.save(new IncidentRecord(id, fingerprint, alert.service(), alert.alertName(),
+                alert.severity().toUpperCase(), Instant.now()));
+        outbox.enqueue(id, properties.investigationTopic(), new InvestigationRequested(id, alert));
+        meters.counter("incident.received", "service", alert.service()).increment();
+        return id;
+    }
+
+    @Transactional(readOnly = true)
+    public List<IncidentRecord> activeIncidents() {
+        return repository.findAllByStatusNotOrderByDetectedAtDesc(IncidentStatus.RESOLVED);
+    }
+
+    private String resolve(String fingerprint) {
+        var incident = repository.findFirstByFingerprintOrderByDetectedAtDesc(fingerprint)
+                .orElseThrow(() -> new IllegalArgumentException("No incident exists for " + fingerprint));
+        if (incident.status() == IncidentStatus.RESOLVED) {
+            meters.counter("incident.duplicate", "service", incident.service()).increment();
+            return incident.id();
+        }
+        incident.resolve();
+        repository.save(incident);
+        outbox.enqueue(incident.id(), properties.notificationTopic(),
+                toEvent(incident, properties.grafanaUrl().toString()));
+        meters.counter("incident.resolved", "service", incident.service()).increment();
+        return incident.id();
+    }
+
+    static IncidentEvent toEvent(IncidentRecord incident, String dashboardUrl) {
+        return new IncidentEvent(incident.id(), incident.fingerprint(), incident.status().name(), incident.service(),
+                incident.alertName(), incident.title(), incident.severity(), incident.probableRootCause(),
+                incident.confidence(), incident.evidence(), incident.affectedServices(), incident.recommendations(),
+                dashboardUrl, incident.updatedAt());
+    }
+
+    private static String fingerprint(AlertmanagerWebhook.Alert alert) {
+        return alert.fingerprint() == null || alert.fingerprint().isBlank()
+                ? alert.service() + ":" + alert.alertName() : alert.fingerprint();
+    }
+}

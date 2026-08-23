@@ -18,14 +18,14 @@ jobs:
       matrix:
         service:
           - api-gateway
-          - product-service
           - inventory-service
           - order-service
+          - ai-incident-analyzer
           - notification-service
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

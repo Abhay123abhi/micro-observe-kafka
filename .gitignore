@@ -22,9 +22,8 @@ build/
 .DS_Store
 Thumbs.db
 
-# Docker volume folders (this is your case)
+# Docker volume folders
 **/volume-data/
-**/mysql_keycloak_data/
 
 # Local database and observability runtime state
 **/docker/**/data/

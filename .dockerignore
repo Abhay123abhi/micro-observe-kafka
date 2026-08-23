@@ -11,3 +11,11 @@
 **/*.pyc
 **/.pytest_cache
 **/node_modules
+**/tempo-data
+**/loki-data
+**/prometheus-data
+**/volume-data
+*.pem
+*.key
+*.p12
+*.jks

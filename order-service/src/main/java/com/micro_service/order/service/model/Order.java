@@ -1,20 +1,18 @@
 package com.micro_service.order.service.model;
 
-import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "t_orders")
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
 public class Order {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -35,8 +33,26 @@ public class Order {
     @Column(nullable = false, updatable = false)
     private LocalDateTime orderDate;
 
+    protected Order() {
+    }
+
+    public Order(String orderNumber, String skuCode, BigDecimal price, int quantity) {
+        this.orderNumber = orderNumber;
+        this.skuCode = skuCode;
+        this.price = price;
+        this.quantity = quantity;
+    }
+
     @PrePersist
-    public void prePersist() {
+    void prePersist() {
         this.orderDate = LocalDateTime.now();
+    }
+
+    public String orderNumber() {
+        return orderNumber;
+    }
+
+    public String skuCode() {
+        return skuCode;
     }
 }

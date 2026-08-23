@@ -1,7 +1,8 @@
 package com.micro_service.notification_service.service;
 
 import com.micro_service.notification_service.config.NotificationProperties;
-import com.techie.microservices.order.event.OrderPlacedEvent;
+import com.micro_service.notification_service.api.IncidentEvent;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -14,9 +15,7 @@ import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
 import java.time.Year;
-import java.time.format.DateTimeFormatter;
 
 @Service
 public class NotificationService {
@@ -26,46 +25,41 @@ public class NotificationService {
     private final JavaMailSender javaMailSender;
     private final TemplateEngine templateEngine;
     private final NotificationProperties properties;
+    private final MeterRegistry meters;
 
     public NotificationService(JavaMailSender javaMailSender, TemplateEngine templateEngine,
-                               NotificationProperties properties) {
+                               NotificationProperties properties, MeterRegistry meters) {
         this.javaMailSender = javaMailSender;
         this.templateEngine = templateEngine;
         this.properties = properties;
+        this.meters = meters;
     }
 
-    @KafkaListener(topics = "order-placed")
-    public void listen(OrderPlacedEvent orderPlacedEvent) {
-        log.info("Received order confirmation event for order {}", orderPlacedEvent.getOrderNumber());
+    @KafkaListener(topics = "${incident.topic:incident-notification}")
+    public void listen(IncidentEvent incident) {
+        log.info("Processing {} incident {} for {}", incident.status(), incident.incidentId(), incident.service());
         MimeMessagePreparator messagePreparator = mimeMessage -> {
             var messageHelper = new MimeMessageHelper(mimeMessage, StandardCharsets.UTF_8.name());
 
             messageHelper.setFrom(properties.from());
-            messageHelper.setTo(orderPlacedEvent.getEmail().toString());
-            messageHelper.setSubject("Your order is confirmed | " + orderPlacedEvent.getOrderNumber());
+            messageHelper.setTo(properties.recipient());
+            messageHelper.setSubject("[%s] [%s] %s".formatted(incident.status(), incident.severity(), incident.title()));
 
             var context = new Context();
-            context.setVariable("firstName", orderPlacedEvent.getFirstName());
-            context.setVariable("lastName", orderPlacedEvent.getLastName());
-            context.setVariable("orderNumber", orderPlacedEvent.getOrderNumber());
-            context.setVariable("skuCode", orderPlacedEvent.getSkuCode());
-            context.setVariable("quantity", orderPlacedEvent.getQuantity());
-            context.setVariable("totalAmount", orderPlacedEvent.getTotalAmount());
-            if (orderPlacedEvent.getPlacedAt() != null) {
-                var placedAt = LocalDateTime.parse(orderPlacedEvent.getPlacedAt().toString())
-                        .format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm"));
-                context.setVariable("placedAt", placedAt);
-            }
+            context.setVariable("incident", incident);
+            context.setVariable("confidencePercent", Math.round(incident.confidence() * 100));
             context.setVariable("year", Year.now().getValue());
 
-            messageHelper.setText(templateEngine.process("order-placed", context), true);
+            messageHelper.setText(templateEngine.process("incident-alert", context), true);
         };
         try {
             javaMailSender.send(messagePreparator);
-            log.info("Order notification email sent for order {}", orderPlacedEvent.getOrderNumber());
+            meters.counter("incident.notification.sent", "service", incident.service(), "status", incident.status()).increment();
+            log.info("Incident notification sent for incident {}", incident.incidentId());
         } catch (MailException e) {
-            log.error("Failed to send order confirmation for order {}", orderPlacedEvent.getOrderNumber(), e);
-            throw new IllegalStateException("Failed to send order notification", e);
+            meters.counter("incident.notification.failed", "service", incident.service()).increment();
+            log.error("Failed to send incident notification {}", incident.incidentId(), e);
+            throw new IllegalStateException("Failed to send incident notification", e);
         }
     }
 }
