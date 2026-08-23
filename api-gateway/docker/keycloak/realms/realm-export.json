@@ -35,7 +35,7 @@
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": false,
   "editUsernameAllowed": false,
-  "bruteForceProtected": false,
+  "bruteForceProtected": true,
   "permanentLockout": false,
   "maxTemporaryLockouts": 0,
   "maxFailureWaitSeconds": 900,
@@ -46,6 +46,14 @@
   "failureFactor": 30,
   "roles": {
     "realm": [
+      {
+        "name": "ADMIN",
+        "description": "Can create and manage application resources"
+      },
+      {
+        "name": "USER",
+        "description": "Can read products and place orders"
+      },
       {
         "id": "ede69e6a-573d-44ee-adca-76086d919055",
         "name": "offline_access",
@@ -467,7 +475,9 @@
       "disableableCredentialTypes": [],
       "requiredActions": [],
       "realmRoles": [
-        "default-roles-spring-microservices-security-realm"
+        "default-roles-spring-microservices-security-realm",
+        "ADMIN",
+        "USER"
       ],
       "notBefore": 0,
       "groups": []
@@ -783,13 +793,9 @@
       "enabled": true,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
-      "secret": "**********",
-      "redirectUris": [
-        "/*"
-      ],
-      "webOrigins": [
-        "/*"
-      ],
+      "secret": "${KEYCLOAK_CLIENT_SECRET}",
+      "redirectUris": [],
+      "webOrigins": [],
       "notBefore": 0,
       "bearerOnly": false,
       "consentRequired": false,

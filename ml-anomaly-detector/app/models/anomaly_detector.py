@@ -1,6 +1,7 @@
 """Anomaly Detection Model - Isolation Forest"""
 
 import logging
+from collections import deque
 from typing import Dict, Any
 
 import numpy as np
@@ -17,6 +18,7 @@ class AnomalyDetector:
         self.contamination = contamination
         self.scaler = StandardScaler()
         self.model = IsolationForest(contamination=contamination, random_state=42)
+        self.history = deque(maxlen=200)
 
     def detect(self, metrics_data: Dict[str, Any]) -> float:
         """Detect anomaly score (0-1)"""
@@ -25,11 +27,16 @@ class AnomalyDetector:
             if not features:
                 return 0.0
 
-            X = np.array(features).reshape(1, -1)
-            X_scaled = self.scaler.fit_transform(X)
+            current = np.array(features, dtype=float)
+            self.history.append(current)
 
-            score = self.model.score_samples(X_scaled)[0]
-            anomaly_score = 1.0 / (1.0 + np.exp(score))
+            if len(self.history) < 10:
+                return float(min(current[-1] / 5.0, 1.0))
+
+            samples = self.scaler.fit_transform(np.array(self.history))
+            self.model.fit(samples)
+            score = self.model.decision_function(samples[-1:].reshape(1, -1))[0]
+            anomaly_score = 1.0 / (1.0 + np.exp(4.0 * score))
 
             return float(anomaly_score)
         except Exception as e:

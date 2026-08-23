@@ -4,8 +4,7 @@ import json
 import logging
 from typing import Dict, Any, Optional, List
 
-from kafka import KafkaProducer
-from kafka.errors import KafkaError
+from kafka import KafkaProducer as NativeKafkaProducer
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,7 @@ class KafkaProducer:
         self.default_topic = topic
 
         try:
-            self.producer = KafkaProducer(
+            self.producer = NativeKafkaProducer(
                 bootstrap_servers=bootstrap_servers,
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
                 key_serializer=lambda k: k.encode("utf-8") if k else None,

@@ -7,11 +7,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class InventoryService {
     private final InventoryRepository inventoryRepository;
 
-    public boolean isInStock(String skuCode, Integer quantity){
-        return inventoryRepository.existsBySkuCodeAndQuantity(skuCode,quantity);
+    @Transactional(readOnly = true)
+    public boolean isInStock(String skuCode, int quantity) {
+        return inventoryRepository.existsBySkuCodeAndQuantityGreaterThanEqual(skuCode, quantity);
     }
 }

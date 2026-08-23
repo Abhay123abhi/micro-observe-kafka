@@ -7,7 +7,7 @@
 **Infrastructure (Excellent)**
 - Multi-service architecture: API Gateway → Order, Inventory, Product services
 - Event-driven messaging: Kafka + Schema Registry (Avro)
-- Databases: MySQL (relational), MongoDB (document)
+- Database: MySQL with a separate database per service
 - Authentication: Keycloak (OAuth2/OpenID Connect)
 - Email notifications: Spring Mail + Kafka integration
 

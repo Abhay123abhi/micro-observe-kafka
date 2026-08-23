@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+    <springProperty scope="context" name="LOKI_URL" source="logging.loki.url"
+                    defaultValue="http://localhost:3100/loki/api/v1/push"/>
     <property name="LOG_FILE" value="${LOG_FILE:-${LOG_PATH:-${LOG_TEMP:-${java.io.tmpdir:-/tmp}}/}spring.log}"/>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
     <springProperty scope="context" name="appName" source="spring.application.name"/>
@@ -27,7 +29,7 @@
 
     <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
         <http>
-            <url>http://localhost:3100/loki/api/v1/push</url>
+            <url>${LOKI_URL}</url>
             <connectionTimeoutMs>5000</connectionTimeoutMs>
             <requestTimeoutMs>5000</requestTimeoutMs>
             <retryConfig>
@@ -53,14 +55,14 @@
                     }
                 </pattern>
             </message>
-            <sortByTime>true</sortByTime>
-            <staticLabels>true</staticLabels>
         </format>
     </appender>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
-        <appender-ref ref="LOKI"/>
+        <springProfile name="observability">
+            <appender-ref ref="LOKI"/>
+        </springProfile>
     </root>
 </configuration>

@@ -9,9 +9,9 @@ from contextlib import asynccontextmanager
 from typing import Dict, Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 import prometheus_client
-from prometheus_client import Counter, Histogram, Gauge
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram
 
 from app.config import Config
 from app.services.prometheus_client import PrometheusClient
@@ -63,8 +63,8 @@ async def lifespan(app: FastAPI):
 
     # Initialize services
     config = Config()
-    prometheus_client_service = PrometheusClient(config.prometheus_url)
-    kafka_producer = KafkaProducer(config.kafka_bootstrap_servers)
+    prometheus_client_service = PrometheusClient(config.PROMETHEUS_URL)
+    kafka_producer = KafkaProducer(config.KAFKA_BOOTSTRAP_SERVERS, config.KAFKA_OUTPUT_TOPIC)
     anomaly_detector = AnomalyDetector()
     forecaster = Forecaster()
     dependency_mapper = DependencyMapper()
@@ -127,7 +127,7 @@ async def ready_check() -> Dict[str, Any]:
 @app.get("/metrics", tags=["Metrics"])
 async def metrics():
     """Export metrics in Prometheus format"""
-    return prometheus_client.generate_latest()
+    return Response(prometheus_client.generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 # Main Webhook Handler
@@ -227,8 +227,12 @@ async def process_single_alert(alert: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"Anomaly score for {service_name}: {anomaly_score:.2f}")
 
     # If not anomalous, skip further processing
-    if anomaly_score < 0.6:  # Configurable threshold
-        logger.info(f"Score below threshold ({anomaly_score:.2f} < 0.6), likely false positive")
+    if anomaly_score < Config.ANOMALY_THRESHOLD:
+        logger.info(
+            "Score below threshold (%.2f < %.2f), likely false positive",
+            anomaly_score,
+            Config.ANOMALY_THRESHOLD,
+        )
         alerts_processed.labels(service=service_name, severity="false_positive").inc()
         return {
             "status": "ignored",
@@ -273,9 +277,9 @@ async def process_single_alert(alert: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     # Send to Kafka
-    logger.info(f"Sending enriched alert to Kafka topic: {Config.kafka_output_topic}")
+    logger.info("Sending enriched alert to Kafka topic: %s", Config.KAFKA_OUTPUT_TOPIC)
     kafka_producer.send(
-        topic=Config.kafka_output_topic,
+        topic=Config.KAFKA_OUTPUT_TOPIC,
         message=enriched_alert,
         key=f"{service_name}:{alert_name}"
     )
@@ -320,7 +324,7 @@ def generate_recommendations(
         recommendations.append("Check database connection pool and query performance")
         recommendations.append("Review Kafka producer lag")
     elif "inventory" in service.lower():
-        recommendations.append("Check MongoDB query performance")
+        recommendations.append("Check MySQL query performance and connection pool usage")
         recommendations.append("Verify cache hit ratio")
     elif "notification" in service.lower():
         recommendations.append("Check email service rate limiting")

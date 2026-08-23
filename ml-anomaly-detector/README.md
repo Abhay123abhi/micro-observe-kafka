@@ -19,7 +19,7 @@ AI-powered failure detection for microservices using machine learning.
 pip install -r requirements.txt
 
 # Run service
-python app.py
+python -m uvicorn app:app --reload
 # Service available at http://localhost:8000
 ```
 
@@ -119,7 +119,7 @@ Prometheus → ML Service (Anomaly Detection)
 ## Integration with Grafana
 
 1. In Grafana, create alert rule
-2. Configure webhook: `http://ml-service:8000/webhooks/grafana/alert`
+2. Configure webhook: `http://ml-anomaly-detector:8000/webhooks/grafana/alert`
 3. ML service receives alert, enriches with context
 4. Sends to Kafka for notification service to process
 
