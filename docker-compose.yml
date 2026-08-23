@@ -208,7 +208,7 @@ services:
     networks: [backend]
 
   grafana:
-    image: grafana/grafana:12.1.0
+    image: grafana/grafana:13.2.0
     restart: unless-stopped
     depends_on: [prometheus, loki, tempo]
     ports: ["${BIND_ADDRESS:-127.0.0.1}:3000:3000"]
