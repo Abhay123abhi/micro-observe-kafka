@@ -180,7 +180,7 @@ services:
     networks: [backend]
 
   alertmanager:
-    image: prom/alertmanager:v0.28.1
+    image: prom/alertmanager:v0.34.0
     restart: unless-stopped
     command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
     ports: ["${BIND_ADDRESS:-127.0.0.1}:9093:9093"]
