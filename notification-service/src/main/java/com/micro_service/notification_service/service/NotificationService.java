@@ -1,10 +1,10 @@
 package com.micro_service.notification_service.service;
 
+import com.micro_service.notification_service.config.NotificationProperties;
 import com.techie.microservices.order.event.OrderPlacedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -21,13 +21,13 @@ public class NotificationService {
 
     private final JavaMailSender javaMailSender;
     private final TemplateEngine templateEngine;
+    private final NotificationProperties properties;
 
-    @Value("${notification.mail.from}")
-    private String senderAddress;
-
-    public NotificationService(JavaMailSender javaMailSender, TemplateEngine templateEngine) {
+    public NotificationService(JavaMailSender javaMailSender, TemplateEngine templateEngine,
+                               NotificationProperties properties) {
         this.javaMailSender = javaMailSender;
         this.templateEngine = templateEngine;
+        this.properties = properties;
     }
 
     @KafkaListener(topics = "order-placed")
@@ -38,7 +38,7 @@ public class NotificationService {
             MimeMessageHelper messageHelper =
                     new MimeMessageHelper(mimeMessage, true, "UTF-8");
 
-            messageHelper.setFrom(senderAddress);
+            messageHelper.setFrom(properties.from());
             messageHelper.setTo(orderPlacedEvent.getEmail().toString());
             messageHelper.setSubject(
                     "🎉 Order Confirmed | " + orderPlacedEvent.getOrderNumber()

@@ -1,7 +1,8 @@
 package com.micro_service.order.service.service;
 
+import com.micro_service.order.service.api.OrderRequest;
+import com.micro_service.order.service.api.OrderResponse;
 import com.micro_service.order.service.client.InventoryClient;
-import com.micro_service.order.service.dto.OrderRequest;
 import com.micro_service.order.service.model.Order;
 import com.micro_service.order.service.repository.OrderRepository;
 import com.techie.microservices.order.event.OrderPlacedEvent;
@@ -10,8 +11,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -25,9 +26,9 @@ public class OrderService {
     private final InventoryClient inventoryClient;
     private final KafkaTemplate<String, OrderPlacedEvent> kafkaTemplate;
 
-    public String placeOrder(OrderRequest orderRequest) {
-        boolean inStock = inventoryClient.isInStock(orderRequest.skuCode(), orderRequest.quantity());
-        if(inStock){
+    public OrderResponse placeOrder(OrderRequest orderRequest) {
+        boolean inStock = inventoryClient.checkStock(orderRequest.skuCode(), orderRequest.quantity()).inStock();
+        if (inStock) {
             Order order = new Order();
             order.setOrderNumber(UUID.randomUUID().toString());
             order.setPrice(orderRequest.price().multiply(BigDecimal.valueOf(orderRequest.quantity())));
@@ -35,22 +36,16 @@ public class OrderService {
             order.setSkuCode(orderRequest.skuCode());
             orderRepository.save(order);
 
-//             send message to kafka topic
-            var orderPlacedEvent = new OrderPlacedEvent(order.getOrderNumber(), orderRequest.userDetails()
-                    .email(),
-                                                        orderRequest.userDetails()
-                                                                .firstName(),
-                                                        orderRequest.userDetails()
-                                                                .lastName());
-            log.info("Start- Sending OrderPlacedEvent {} to Kafka Topic", orderPlacedEvent);
+            var user = orderRequest.userDetails();
+            var orderPlacedEvent = new OrderPlacedEvent(
+                    order.getOrderNumber(), user.email(), user.firstName(), user.lastName());
+            log.info("Sending OrderPlacedEvent {} to Kafka", orderPlacedEvent);
             kafkaTemplate.sendDefault(orderPlacedEvent);
-            log.info("End- Sending OrderPlacedEvent {} to Kafka Topic", orderPlacedEvent);
-            return order.getOrderNumber();
-        }else{
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Product with SKU " + orderRequest.skuCode() + " is out of stock");
+            return new OrderResponse(order.getOrderNumber());
         }
 
+        throw new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Product with SKU " + orderRequest.skuCode() + " is out of stock");
     }
 }

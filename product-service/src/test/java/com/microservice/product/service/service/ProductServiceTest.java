@@ -1,7 +1,7 @@
 package com.microservice.product.service.service;
 
-import com.microservice.product.service.dto.ProductRequest;
-import com.microservice.product.service.dto.ProductResponse;
+import com.microservice.product.service.api.ProductRequest;
+import com.microservice.product.service.api.ProductResponse;
 import com.microservice.product.service.model.Product;
 import com.microservice.product.service.repository.ProductRepository;
 import org.junit.jupiter.api.Test;

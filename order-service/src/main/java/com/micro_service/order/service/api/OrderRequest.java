@@ -1,4 +1,4 @@
-package com.micro_service.order.service.dto;
+package com.micro_service.order.service.api;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;

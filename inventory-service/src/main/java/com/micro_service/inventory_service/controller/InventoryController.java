@@ -1,5 +1,6 @@
 package com.micro_service.inventory_service.controller;
 
+import com.micro_service.inventory_service.api.InventoryResponse;
 import com.micro_service.inventory_service.service.InventoryService;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -17,8 +18,8 @@ public class InventoryController {
 
     @GetMapping
     @ResponseStatus(HttpStatus.OK)
-    public boolean isInStock(@RequestParam @NotBlank String skuCode,
-                             @RequestParam @Min(1) int quantity) {
-        return inventoryService.isInStock(skuCode, quantity);
+    public InventoryResponse isInStock(@RequestParam @NotBlank String skuCode,
+                                       @RequestParam @Min(1) int quantity) {
+        return new InventoryResponse(inventoryService.isInStock(skuCode, quantity));
     }
 }

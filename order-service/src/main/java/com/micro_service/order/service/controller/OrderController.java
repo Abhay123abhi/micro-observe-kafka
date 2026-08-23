@@ -1,6 +1,7 @@
 package com.micro_service.order.service.controller;
 
-import com.micro_service.order.service.dto.OrderRequest;
+import com.micro_service.order.service.api.OrderRequest;
+import com.micro_service.order.service.api.OrderResponse;
 import com.micro_service.order.service.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +16,7 @@ public class OrderController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public String placeOrder(@Valid @RequestBody OrderRequest orderRequest) {
+    public OrderResponse placeOrder(@Valid @RequestBody OrderRequest orderRequest) {
         return orderService.placeOrder(orderRequest);
     }
 }
