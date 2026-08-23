@@ -24,13 +24,16 @@ public class TelemetryEvidenceService {
 
     private final RestClient restClient;
     private final IncidentProperties properties;
+    private final DeploymentService deployments;
 
-    public TelemetryEvidenceService(RestClient.Builder restClient, IncidentProperties properties) {
+    public TelemetryEvidenceService(RestClient.Builder restClient, IncidentProperties properties,
+                                    DeploymentService deployments) {
         var httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
         var requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(Duration.ofSeconds(5));
         this.restClient = restClient.requestFactory(requestFactory).build();
         this.properties = properties;
+        this.deployments = deployments;
     }
 
     public IncidentEvidence collect(AlertmanagerWebhook.Alert alert) {
@@ -43,7 +46,7 @@ public class TelemetryEvidenceService {
         queryMetric(metrics, "active_db_connections", "sum(hikaricp_connections_active{job=\"%s\"})".formatted(service));
 
         return new IncidentEvidence(service, alert.alertName(), alert.severity(), Map.copyOf(metrics),
-                fetchLogs(service), fetchTraces(service), dependencies(service));
+                fetchLogs(service), fetchTraces(service), dependencies(service), deployments.recentEvidence(service));
     }
 
     private void queryMetric(Map<String, Double> metrics, String name, String query) {
