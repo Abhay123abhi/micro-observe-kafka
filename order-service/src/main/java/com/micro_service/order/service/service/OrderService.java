@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -23,7 +25,7 @@ public class OrderService {
     private final InventoryClient inventoryClient;
     private final KafkaTemplate<String, OrderPlacedEvent> kafkaTemplate;
 
-    public void placeOrder(OrderRequest orderRequest) {
+    public String placeOrder(OrderRequest orderRequest) {
         boolean inStock = inventoryClient.isInStock(orderRequest.skuCode(), orderRequest.quantity());
         if(inStock){
             Order order = new Order();
@@ -41,11 +43,13 @@ public class OrderService {
                                                         orderRequest.userDetails()
                                                                 .lastName());
             log.info("Start- Sending OrderPlacedEvent {} to Kafka Topic", orderPlacedEvent);
-            kafkaTemplate.send("order-placed", orderPlacedEvent);
+            kafkaTemplate.sendDefault(orderPlacedEvent);
             log.info("End- Sending OrderPlacedEvent {} to Kafka Topic", orderPlacedEvent);
-
+            return order.getOrderNumber();
         }else{
-            throw new RuntimeException("Product with Skucode " + orderRequest.skuCode() + "is out of stock");
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Product with SKU " + orderRequest.skuCode() + " is out of stock");
         }
 
     }

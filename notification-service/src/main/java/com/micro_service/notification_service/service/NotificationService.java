@@ -4,6 +4,7 @@ import com.techie.microservices.order.event.OrderPlacedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -21,6 +22,9 @@ public class NotificationService {
     private final JavaMailSender javaMailSender;
     private final TemplateEngine templateEngine;
 
+    @Value("${notification.mail.from}")
+    private String senderAddress;
+
     @KafkaListener(topics = "order-placed")
     public void listen(OrderPlacedEvent orderPlacedEvent){
         log.info("Got Message from order-placed topic {}", orderPlacedEvent);
@@ -29,7 +33,7 @@ public class NotificationService {
             MimeMessageHelper messageHelper =
                     new MimeMessageHelper(mimeMessage, true, "UTF-8");
 
-            messageHelper.setFrom("accessdenied801@gmail.com");
+            messageHelper.setFrom(senderAddress);
             messageHelper.setTo(orderPlacedEvent.getEmail().toString());
             messageHelper.setSubject(
                     "🎉 Order Confirmed | " + orderPlacedEvent.getOrderNumber()
@@ -46,12 +50,13 @@ public class NotificationService {
                     templateEngine.process("order-placed", context);
 
             messageHelper.setText(htmlContent, true);
-        };        try {
+        };
+        try {
             javaMailSender.send(messagePreparator);
-            log.info("Order Notifcation email sent to email ID!!");
+            log.info("Order notification email sent for order {}", orderPlacedEvent.getOrderNumber());
         } catch (MailException e) {
             log.error("Exception occurred when sending mail", e);
-            throw new RuntimeException("Exception occurred when sending mail to springshop@email.com", e);
+            throw new IllegalStateException("Failed to send order notification", e);
         }
     }
 }

@@ -22,3 +22,10 @@ Thumbs.db
 # Docker volume folders (this is your case)
 **/volume-data/
 **/mysql_keycloak_data/
+
+# Local database and observability runtime state
+**/docker/**/data/
+**/tempo-data/
+**/loki-data/
+**/prometheus-data/
+data/

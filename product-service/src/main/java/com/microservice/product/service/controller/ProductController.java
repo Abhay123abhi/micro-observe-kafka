@@ -3,6 +3,7 @@ import com.microservice.product.service.dto.ProductRequest;
 import com.microservice.product.service.dto.ProductResponse;
 import com.microservice.product.service.service.ProductService;
 import lombok.RequiredArgsConstructor;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,8 +17,8 @@ public class ProductController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public void createProduct(@RequestBody ProductRequest productRequest) {
-        productService.createProduct(productRequest);
+    public ProductResponse createProduct(@Valid @RequestBody ProductRequest productRequest) {
+        return productService.createProduct(productRequest);
     }
 
     @GetMapping

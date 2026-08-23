@@ -18,15 +18,16 @@ public class ProductService {
     }
 
 
-    public void createProduct(ProductRequest productRequest) {
+    public ProductResponse createProduct(ProductRequest productRequest) {
         Product product = Product.builder()
                 .name(productRequest.name())
                 .description(productRequest.description())
                 .price(productRequest.price())
                 .build();
 
-        productRepository.save(product);
-        log.info("Product {} is saved", product.getId());
+        Product savedProduct = productRepository.save(product);
+        log.info("Product {} is saved", savedProduct.getId());
+        return mapToProductResponse(savedProduct);
     }
     public List<ProductResponse> getAllProducts() {
         List<Product> products = productRepository.findAll();
