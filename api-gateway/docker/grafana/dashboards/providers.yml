@@ -1,9 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: observe-ai
+  - name: micro-observe-kafka
     orgId: 1
-    folder: Observe AI
+    folder: Micro Observe Kafka
     type: file
     disableDeletion: false
     editable: true

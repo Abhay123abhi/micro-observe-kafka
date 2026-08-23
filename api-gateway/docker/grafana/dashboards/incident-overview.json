@@ -1,6 +1,6 @@
 {
-  "uid": "observe-ai-overview",
-  "title": "Observe AI - Incident Investigation",
+  "uid": "micro-observe-kafka-overview",
+  "title": "Micro Observe Kafka - Incident Investigation",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "15s",

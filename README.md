@@ -1,6 +1,6 @@
-# Observe AI
+# Micro Observe Kafka
 
-Observe AI is a small incident investigation platform built with Java and
+Micro Observe Kafka is a small incident investigation platform built with Java and
 Spring. It starts with a normal service failure, collects the related metrics,
 logs, and traces, and turns that evidence into an incident report. The report is
 stored in PostgreSQL, displayed in Grafana, and sent to the configured operations

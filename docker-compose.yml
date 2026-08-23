@@ -1,4 +1,4 @@
-name: observe-ai
+name: micro-observe-kafka
 
 x-java-environment: &java-environment
   JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70.0 -XX:InitialRAMPercentage=25.0
