@@ -21,8 +21,8 @@ public class RuleBasedIncidentInvestigator implements IncidentInvestigator {
 
         String rootCause = evidence.recentErrors().stream().findFirst()
                 .orElseGet(() -> evidence.recentDeployments().stream().findFirst()
-                        .map(deployment -> "A recent deployment (%s) is correlated with the incident. "
-                                + "Review its change summary and commit; correlation is not proof of causation."
+                        .map(deployment -> ("A recent deployment (%s) is correlated with the incident. "
+                                + "Review its change summary and commit; correlation is not proof of causation.")
                                 .formatted(deployment.version()))
                         .orElse("The alert condition indicates abnormal service behavior; inspect its telemetry."));
 
