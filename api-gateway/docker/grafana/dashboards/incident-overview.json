@@ -12,7 +12,7 @@
       "type": "stat",
       "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "expr": "incident_active", "refId": "A" }]
+      "targets": [{ "expr": "sum(incident_active) or vector(0)", "refId": "A" }]
     },
     {
       "id": 2,
@@ -20,7 +20,7 @@
       "type": "stat",
       "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "expr": "sum(incident_analyzed_total)", "refId": "A" }]
+      "targets": [{ "expr": "sum(incident_investigated_total) or vector(0)", "refId": "A" }]
     },
     {
       "id": 3,
@@ -28,15 +28,15 @@
       "type": "stat",
       "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "expr": "sum(incident_notification_sent_total)", "refId": "A" }]
+      "targets": [{ "expr": "sum(incident_notification_sent_total) or vector(0)", "refId": "A" }]
     },
     {
       "id": 4,
-      "title": "AI analysis failures",
+      "title": "Investigation failures",
       "type": "stat",
       "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "expr": "sum(incident_analysis_failure_total)", "refId": "A" }]
+      "targets": [{ "expr": "sum(incident_investigation_failure_total) or vector(0)", "refId": "A" }]
     },
     {
       "id": 5,

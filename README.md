@@ -226,6 +226,27 @@ curl -X DELETE http://localhost:8082/demo/failures
 When the Prometheus rule clears, Alertmanager sends a resolved webhook. The same
 incident is marked `RESOLVED` and a recovery email is queued.
 
+## Data limits and retention
+
+The incident API is paginated and bounded. Use:
+
+```text
+GET /api/incidents?scope=active&page=0&size=20
+```
+
+`scope` accepts `active`, `resolved`, or `all`. The configured maximum page size is
+100, so callers cannot accidentally fetch an unbounded incident history.
+
+Repeated alerts are deduplicated while active by their Alertmanager fingerprint. The
+database retains resolved incidents for 30 days and successfully published outbox
+events for 7 days by default. Override these local defaults in `.env` with
+`INCIDENT_RESOLVED_RETENTION_DAYS`, `INCIDENT_OUTBOX_RETENTION_DAYS`, and
+`INCIDENT_MAXIMUM_PAGE_SIZE`.
+
+Evidence is also bounded: investigations collect at most 10 log lines by default
+and the configuration permits at most 50. This limits database growth and avoids
+sending an excessive amount of telemetry to an AI provider.
+
 ## Useful commands
 
 ```bash
