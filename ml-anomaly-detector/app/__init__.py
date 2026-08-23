@@ -320,7 +320,7 @@ def generate_recommendations(
         recommendations.append("Check database connection pool and query performance")
         recommendations.append("Review Kafka producer lag")
     elif "inventory" in service.lower():
-        recommendations.append("Check MongoDB query performance")
+        recommendations.append("Check MySQL query performance and connection pool usage")
         recommendations.append("Verify cache hit ratio")
     elif "notification" in service.lower():
         recommendations.append("Check email service rate limiting")

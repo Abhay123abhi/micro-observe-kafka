@@ -1,23 +1,39 @@
 package com.microservice.product.service.model;
 
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 
-@Document(value = "product")
+@Entity
+@Table(name = "products")
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
-@Data
+@Getter
+@Setter
 public class Product {
+
     @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(length = 36, nullable = false, updatable = false)
     private String id;
+
+    @Column(nullable = false, length = 150)
     private String name;
+
+    @Column(nullable = false, length = 1000)
     private String description;
+
+    @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal price;
 }

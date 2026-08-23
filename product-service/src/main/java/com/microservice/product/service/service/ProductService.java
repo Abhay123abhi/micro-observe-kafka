@@ -1,10 +1,12 @@
 package com.microservice.product.service.service;
+
 import com.microservice.product.service.api.ProductRequest;
 import com.microservice.product.service.api.ProductResponse;
 import com.microservice.product.service.model.Product;
 import com.microservice.product.service.repository.ProductRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -17,7 +19,7 @@ public class ProductService {
         this.productRepository = productRepository;
     }
 
-
+    @Transactional
     public ProductResponse createProduct(ProductRequest productRequest) {
         Product product = Product.builder()
                 .name(productRequest.name())
@@ -29,10 +31,10 @@ public class ProductService {
         log.info("Product {} is saved", savedProduct.getId());
         return mapToProductResponse(savedProduct);
     }
-    public List<ProductResponse> getAllProducts() {
-        List<Product> products = productRepository.findAll();
 
-        return products.stream().map(this::mapToProductResponse).toList();
+    @Transactional(readOnly = true)
+    public List<ProductResponse> getAllProducts() {
+        return productRepository.findAll().stream().map(this::mapToProductResponse).toList();
     }
 
     private ProductResponse mapToProductResponse(Product product) {

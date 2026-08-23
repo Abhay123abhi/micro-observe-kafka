@@ -5,6 +5,9 @@
 *.db
 *.tmp
 *.lock
+.env
+.env.*
+!.env.example
 
 # Maven & Gradle
 target/
