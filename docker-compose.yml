@@ -169,7 +169,7 @@ services:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:9000/actuator/health"]
 
   prometheus:
-    image: prom/prometheus:v3.5.0
+    image: prom/prometheus:v3.14.0
     restart: unless-stopped
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
     ports: ["${BIND_ADDRESS:-127.0.0.1}:9090:9090"]
