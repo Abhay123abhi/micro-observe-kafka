@@ -13,11 +13,12 @@ x-java-service: &java-service
   security_opt: ["no-new-privileges:true"]
   cap_drop: [ALL]
   networks: [backend]
-  healthcheck:
-    interval: 15s
-    timeout: 5s
-    retries: 12
-    start_period: 60s
+
+x-java-healthcheck: &java-healthcheck
+  interval: 15s
+  timeout: 10s
+  retries: 12
+  start_period: 120s
 
 services:
   postgres:
@@ -79,6 +80,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
+      <<: *java-healthcheck
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8082/actuator/health"]
 
   order-service:
@@ -98,6 +100,7 @@ services:
       postgres: { condition: service_healthy }
       inventory-service: { condition: service_healthy }
     healthcheck:
+      <<: *java-healthcheck
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8081/actuator/health"]
 
   ai-incident-analyzer:
@@ -127,6 +130,7 @@ services:
       prometheus: { condition: service_started }
       postgres: { condition: service_healthy }
     healthcheck:
+      <<: *java-healthcheck
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8084/actuator/health"]
 
   notification-service:
@@ -148,6 +152,7 @@ services:
     depends_on:
       broker: { condition: service_healthy }
     healthcheck:
+      <<: *java-healthcheck
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8083/actuator/health"]
 
   api-gateway:
@@ -167,6 +172,7 @@ services:
       inventory-service: { condition: service_healthy }
       ai-incident-analyzer: { condition: service_healthy }
     healthcheck:
+      <<: *java-healthcheck
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:9000/actuator/health"]
 
   prometheus:
