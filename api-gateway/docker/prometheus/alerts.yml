@@ -3,12 +3,12 @@ groups:
     rules:
       - alert: ServiceUnavailable
         expr: up{job=~"api-gateway|order-service|inventory-service|notification-service"} == 0
-        for: 1m
+        for: 3m
         labels:
           severity: critical
         annotations:
           summary: "{{ $labels.job }} is unavailable"
-          description: "Prometheus has been unable to scrape {{ $labels.job }} for one minute."
+          description: "Prometheus has been unable to scrape {{ $labels.job }} for three minutes."
 
       - alert: HighErrorRate
         expr: |
