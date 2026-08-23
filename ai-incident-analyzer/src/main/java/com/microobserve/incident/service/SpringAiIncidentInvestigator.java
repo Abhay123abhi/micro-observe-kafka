@@ -34,6 +34,7 @@ public class SpringAiIncidentInvestigator implements IncidentInvestigator {
         this.chatClient = builder.defaultSystem(SYSTEM_PROMPT).build();
         this.fallback = fallback;
         this.meters = meters;
+        log.info("AI incident investigations are enabled. Provider request logging remains disabled.");
     }
 
     @Override
@@ -47,10 +48,11 @@ public class SpringAiIncidentInvestigator implements IncidentInvestigator {
                 return fallBack(evidence, "empty_response");
             }
             meters.counter("incident.ai.investigation", "outcome", "success").increment();
+            log.info("AI investigation completed for {}.", evidence.alert().service());
             return analysis;
         } catch (RuntimeException providerFailure) {
-            log.warn("AI investigation failed; using deterministic analysis: {}",
-                    providerFailure.getClass().getSimpleName());
+            log.warn("AI investigation failed; using deterministic analysis. cause={}",
+                    providerFailure.getMessage());
             return fallBack(evidence, "provider_failure");
         }
     }
