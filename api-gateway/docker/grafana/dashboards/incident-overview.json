@@ -1,6 +1,6 @@
 {
-  "uid": "incident-lens-overview",
-  "title": "IncidentLens - Incident Investigation",
+  "uid": "observe-ai-overview",
+  "title": "Observe AI - Incident Investigation",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "15s",

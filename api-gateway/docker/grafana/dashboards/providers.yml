@@ -1,9 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: incident-lens
+  - name: observe-ai
     orgId: 1
-    folder: IncidentLens
+    folder: Observe AI
     type: file
     disableDeletion: false
     editable: true

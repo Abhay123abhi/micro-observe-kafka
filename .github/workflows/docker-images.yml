@@ -39,7 +39,7 @@ jobs:
 
       - name: Resolve image name
         id: image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/incident-lens-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/micro-observe-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
 
       - name: Build and publish
         uses: docker/build-push-action@v7

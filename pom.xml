@@ -11,11 +11,11 @@
         <relativePath/>
     </parent>
 
-    <groupId>io.github.abhay123abhi</groupId>
-    <artifactId>incident-lens</artifactId>
+    <groupId>com.microobserve</groupId>
+    <artifactId>micro-observe-kafka</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>IncidentLens</name>
+    <name>micro-observe-kafka</name>
 
     <modules>
         <module>api-gateway</module>
