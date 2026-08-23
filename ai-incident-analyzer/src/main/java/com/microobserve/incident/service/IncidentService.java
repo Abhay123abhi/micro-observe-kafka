@@ -9,11 +9,17 @@ import com.microobserve.incident.model.InvestigationRequested;
 import com.microobserve.incident.repository.IncidentRepository;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Gauge;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -58,8 +64,17 @@ public class IncidentService {
     }
 
     @Transactional(readOnly = true)
-    public List<IncidentRecord> activeIncidents() {
-        return repository.findAllByStatusNotOrderByDetectedAtDesc(IncidentStatus.RESOLVED);
+    public Page<IncidentRecord> incidents(String scope, int page, int requestedSize) {
+        int size = Math.min(requestedSize, properties.maximumPageSize());
+        var pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "detectedAt"));
+
+        return switch (scope.toLowerCase(Locale.ROOT)) {
+            case "active" -> repository.findAllByStatusNotOrderByDetectedAtDesc(IncidentStatus.RESOLVED, pageable);
+            case "resolved" -> repository.findAllByStatusOrderByDetectedAtDesc(IncidentStatus.RESOLVED, pageable);
+            case "all" -> repository.findAll(pageable);
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "scope must be active, resolved, or all");
+        };
     }
 
     private String resolve(String fingerprint) {
