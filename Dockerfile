@@ -2,6 +2,10 @@
 
 FROM eclipse-temurin:25-jdk AS build
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends unzip && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /workspace
 
 COPY . .
@@ -9,6 +13,7 @@ COPY . .
 ARG SERVICE
 
 RUN --mount=type=cache,target=/root/.m2 \
+    sed -i 's/\r$//' ./mvnw ./api-gateway/mvnw && \
     test -n "$SERVICE" && \
     sh ./mvnw --batch-mode --no-transfer-progress \
       -pl "$SERVICE" -am -DskipTests package && \
