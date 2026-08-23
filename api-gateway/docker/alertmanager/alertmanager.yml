@@ -4,9 +4,9 @@ global:
 route:
   receiver: incident-platform
   group_by: [alertname, job, service]
-  group_wait: 10s
-  group_interval: 2m
-  repeat_interval: 4h
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
 
 receivers:
   - name: incident-platform
