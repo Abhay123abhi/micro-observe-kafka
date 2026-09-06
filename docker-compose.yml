@@ -142,6 +142,7 @@ services:
     environment:
       <<: *java-environment
       KAFKA_BOOTSTRAP_SERVERS: broker:29092
+      EMAIL_NOTIFICATIONS_ENABLED: ${EMAIL_NOTIFICATIONS_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_AUTH: ${SMTP_AUTH:-true}

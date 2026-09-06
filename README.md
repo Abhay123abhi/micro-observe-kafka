@@ -5,9 +5,33 @@ when an alert fires. PostgreSQL stores the incident and an outbox event in one
 transaction; Kafka carries the investigation and notification work. Grafana shows
 incident history alongside service telemetry. Email is optional.
 
-The core problem is getting the relevant telemetry into one report when a service
-fails. Reports contain observed values and suggested checks. They do not infer a
-root cause, invent a confidence score, or call a model provider.
+## Problem and approach
+
+During a service failure, engineers must move between alert dashboards, metrics,
+logs and traces to collect enough context to investigate. Repeated notifications
+add noise, and a failure between saving an incident and publishing work can leave
+an incident without an investigation. Copying every application log into the
+incident database would also make incident history expensive to store and query.
+
+This project assembles a bounded evidence report for each distinct active alert:
+
+- Alertmanager handles alert grouping and routing. Incident intake reuses the
+  active incident for sequential repeated webhooks with the same fingerprint.
+- PostgreSQL stores incident state and the outgoing work in one transaction.
+  An outbox publisher retries publication to Kafka when the broker is unavailable.
+- A Kafka worker collects selected metrics, error samples and trace summaries.
+  Raw telemetry stays in its source system; only a small snapshot is stored with
+  the incident. Source failures are included in the report.
+- Grafana and the Incident API expose the stored report. Optional email announces
+  investigation and recovery. Late investigation results cannot reopen resolved
+  incidents.
+- Pagination, bounded report fields and scheduled database retention limit some
+  growth. They do not provide a complete disk budget or unlimited processing capacity.
+
+The result is a persistent starting point for investigation, reducing manual
+collection work. The service does not establish a root cause or measure a proven
+reduction in recovery time. Its value is the reliable incident workflow built around
+existing telemetry tools.
 
 ## Workflow
 
@@ -137,7 +161,13 @@ After resetting the failure, allow the five-minute metric window and alert group
 delays to clear before expecting `RESOLVED`. Remove `demo` from `.env` and recreate
 Inventory when finished. Failure injection is for local walkthroughs only.
 
-## Optional email
+## Optional email and testing toggle
+
+`EMAIL_NOTIFICATIONS_ENABLED=false` is the default. The Compose `email` profile
+controls whether the notification service runs; the switch controls whether that
+running service sends mail. For repeated testing, keep the consumer running and
+mute sending with the switch.
+
 
 Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `NOTIFICATION_FROM`,
 and `ALERT_EMAIL_TO` in `.env`. For an SMTP server without authentication or STARTTLS,
@@ -148,8 +178,41 @@ docker compose --profile email up --build -d notification-service
 docker compose logs -f notification-service
 ```
 
-Rerun the smoke test after starting email. Expect an investigation and recovery
-notification; duplicates are possible because delivery is at least once. A successful
+To turn sending **on**, set this in `.env`:
+
+```dotenv
+EMAIL_NOTIFICATIONS_ENABLED=true
+```
+
+To turn sending **off**, change it to:
+
+```dotenv
+EMAIL_NOTIFICATIONS_ENABLED=false
+```
+
+After either change, recreate only the notification container:
+
+```powershell
+docker compose --profile email up -d --force-recreate notification-service
+```
+
+Use `--build` too when first installing this code change. `docker compose restart`
+does not reload environment changes. This is a restart-applied switch, not a live
+UI toggle. Turning it off cannot recall a message already accepted by SMTP.
+
+When off, the Kafka listener still consumes notifications, records
+`incident_notification_suppressed_total` and returns normally without rendering
+email or contacting SMTP. SMTP health checks are disabled too. Events successfully
+consumed and committed while muted are not deliberately held for later delivery.
+Stopping the consumer instead leaves a backlog subject to Kafka retention; enabling
+email before that backlog is drained can send older notifications.
+
+Test with the service running and sending off: run `.\scripts\smoke-test.ps1`, confirm
+no email arrives, and inspect
+`http://localhost:8083/actuator/metrics/incident.notification.suppressed`.
+Then turn sending on, recreate the container and rerun the smoke test with valid
+SMTP settings. Expect an investigation and recovery notification; duplicates are possible because delivery is at least once. The switch mutes all
+email; it does not add throttling, digests or durable delivery deduplication. A successful
 SMTP send means the server accepted the message, not that it reached the inbox.
 Never commit SMTP credentials. If you previously copied a real password from the
 old `.env.example`, revoke it and issue a new one.
@@ -193,6 +256,93 @@ consumer ignores obsolete fields in queued older events. Upgrade both Java servi
 together; rolling back to the old module requires restoring the database backup.
 
 Remove old provider variables from your local `.env`; they are no longer used.
+
+## Storage and growing data volumes
+
+Raw error logs, incident records and Kafka work events are different data types.
+A log line does not automatically create an incident: an alert rule must fire and
+Alertmanager must forward it. Multiple distinct fingerprints can still create many
+incidents; this is not cross-alert incident correlation.
+
+| Data | Stored in | Current limits and lifecycle |
+| --- | --- | --- |
+| Incident state and evidence snapshot | PostgreSQL `incidents`, in `postgres-data` | Indexed incident metadata plus JSONB evidence, affected-service and recommendation lists. Resolved records are eligible for deletion 30 days after resolution. Active and investigation-failed records are not automatically expired. |
+| Outgoing investigation and notification events | PostgreSQL `outbox_events`, in `postgres-data` | JSON payload, topic, aggregate ID and publication timestamps. Published events are eligible for deletion after 7 days. Unpublished events are retained for retry, with no backlog cap. |
+| Investigation and notification messages | Kafka topics, in `kafka-data` | Retained independently of PostgreSQL. This repository does not explicitly set topic retention or byte limits; broker/topic defaults apply. Consumption does not immediately delete a message. |
+| Raw application logs | Loki, in `loki-data` | The stack uses the image's local configuration. No project-specific retention/compactor policy or disk budget is configured. |
+| Raw trace data | Tempo, in `tempo-data` | Local block storage. No project-specific trace retention or disk budget is configured; component defaults apply. |
+| Time-series metrics | Prometheus, in `prometheus-data` | Explicit 7-day time retention. No size-based retention is configured. |
+| Container stdout/stderr | Docker logging storage on the host | Separate from Loki. No rotation policy is configured in Compose; Docker daemon settings apply. |
+
+Docker named volumes survive container restarts and `docker compose down`. On
+Docker Desktop they consume host-backed storage inside Docker's Linux environment.
+They are persistence, not backups, remote storage or unlimited capacity.
+
+### How much evidence is copied into an incident?
+
+The worker queries a five-minute window ending when collection starts. It requests
+up to 10 log lines by default (configurable up to 50), then the report selects up to
+3 error samples and 5 trace summaries alongside metrics and collection notes.
+Report lists are capped at 20 entries each, and each entry is capped at 1,000
+characters. These are character/list limits, not a guaranteed byte size. Full logs
+and trace spans are not copied into PostgreSQL. The saved snapshot can outlive the
+raw telemetry, but opening an old trace requires it still to exist in Tempo.
+
+Database cleanup runs with a one-hour fixed delay after completion, initially five
+minutes after startup. Records become eligible at the configured age; deletion is
+not an exact TTL deadline and requires a healthy running incident service. Deleting
+rows also does not guarantee the database volume immediately shrinks on disk.
+
+### What happens during a failure storm?
+
+Repeated firing webhooks for one active fingerprint reuse its incident. Distinct
+fingerprints create separate incidents and outbox events. The publisher reads up
+to 100 pending events per pass; that bounds a publishing batch, not the total queue.
+Kafka decouples intake from investigation, so temporary bursts can accumulate as
+consumer lag. If incoming work keeps exceeding processing capacity, the backlog
+and investigation delay continue to grow.
+
+If Kafka is down, unpublished outbox entries accumulate in PostgreSQL. If workers
+are down, Kafka messages accumulate subject to Kafka retention. Retention can remove
+messages before a slow or stopped consumer processes them. Queueing therefore buys
+time; it does not guarantee unlimited buffering or prevent disk exhaustion.
+
+The current setup handles a local demo and provides some bounded data handling.
+It has no measured high-volume capacity, per-service intake rate limit, complete
+storage budget, automatic archival or multi-instance worker coordination.
+
+### Next steps before sustained high-volume use
+
+These are proposed improvements, not enabled features:
+
+1. Configure and verify Loki compactor retention, explicit Tempo retention, Kafka
+   time/byte retention, Prometheus size retention and Docker log rotation. Preserve
+   free-space headroom; retention thresholds are not exact disk quotas.
+2. Monitor disk usage, oldest unpublished outbox age, pending outbox count, Kafka
+   consumer lag and investigation duration. Define operational thresholds before
+   accepting more load.
+3. Set an intake rate limit and an explicit overload response/retry policy. Add
+   bounded retries, a dead-letter queue and controlled replay for failed work.
+4. Define ownership and review/archival rules for unresolved and failed incidents.
+   Never silently delete pending investigations just to reduce disk use.
+5. Batch database cleanup and measure query/index performance. Consider time
+   partitioning, archival or object storage only when measured volume warrants it.
+6. Load-test the pipeline, then add partitions and workers together with safe
+   outbox claiming and durable idempotency before running multiple instances.
+
+For capacity planning, estimate each store separately. For example, assuming
+1,000 distinct resolved incidents/day, 10 KB per stored report and 30 retained days,
+report content alone would be about 300 MB. This is illustrative, not a benchmark;
+indexes, outbox payloads, unresolved records, PostgreSQL overhead and raw telemetry
+are additional. Raw log volume can exceed incident-report volume by a large margin.
+
+Loki requires explicit retention configuration; filesystem storage does not delete
+logs simply because the disk is nearly full. See the [Loki retention documentation](https://grafana.com/docs/loki/latest/operations/storage/retention/)
+and [filesystem storage behavior](https://grafana.com/docs/loki/latest/configure/storage/).
+Kafka byte retention applies per partition, not to the entire cluster; see
+[Kafka topic configuration](https://kafka.apache.org/41/configuration/topic-configs/).
+Prometheus also needs room for ongoing writes and compaction beyond retained blocks;
+see [Prometheus storage guidance](https://prometheus.io/docs/prometheus/latest/storage/).
 
 ## Limits and follow-up work
 
