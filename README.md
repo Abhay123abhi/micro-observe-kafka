@@ -1,312 +1,475 @@
 # Micro Observe Kafka
 
-Micro Observe Kafka is a small incident investigation platform built with Java and
-Spring. It starts with a normal service failure, collects the related metrics,
-logs, and traces, and turns that evidence into an incident report. The report is
-stored in PostgreSQL, displayed in Grafana, and sent to the configured operations
-email address.
+A Java incident investigation service that collects metrics, error logs, and traces
+when an alert fires. PostgreSQL stores the incident and an outbox event in one
+transaction; Kafka carries the investigation and notification work. Grafana shows
+incident history alongside service telemetry. Email is optional.
 
-The project runs without an AI key. In that mode it uses a rule-based
-investigator, which makes it easier to learn the incident flow before adding a
-model.
+## Problem and approach
 
-## The problem
+During a service failure, engineers must move between alert dashboards, metrics,
+logs and traces to collect enough context to investigate. Repeated notifications
+add noise, and a failure between saving an incident and publishing work can leave
+an incident without an investigation. Copying every application log into the
+incident database would also make incident history expensive to store and query.
 
-Monitoring tools tell us that a threshold was crossed. They do not usually
-connect the alert with recent logs, slow traces, affected services, and a short
-list of next steps. Engineers still do that correlation manually.
+This project assembles a bounded evidence report for each distinct active alert:
 
-This repository automates the first investigation pass:
+- Alertmanager handles alert grouping and routing. Incident intake reuses the
+  active incident for sequential repeated webhooks with the same fingerprint.
+- PostgreSQL stores incident state and the outgoing work in one transaction.
+  An outbox publisher retries publication to Kafka when the broker is unavailable.
+- A Kafka worker collects selected metrics, error samples and trace summaries.
+  Raw telemetry stays in its source system; only a small snapshot is stored with
+  the incident. Source failures are included in the report.
+- Grafana and the Incident API expose the stored report. Optional email announces
+  investigation and recovery. Late investigation results cannot reopen resolved
+  incidents.
+- Pagination, bounded report fields and scheduled database retention limit some
+  growth. They do not provide a complete disk budget or unlimited processing capacity.
 
-1. Prometheus detects a service symptom.
-2. Alertmanager groups and forwards the alert.
-3. The incident service records it and queues an investigation.
-4. A worker reads a small evidence window from Prometheus, Loki, and Tempo.
-5. Spring AI or the local rules produce a structured report.
-6. Grafana and email show the result.
+The result is a persistent starting point for investigation, reducing manual
+collection work. The service does not establish a root cause or measure a proven
+reduction in recovery time. Its value is the reliable incident workflow built around
+existing telemetry tools.
 
-The model explains evidence; it does not decide whether an incident exists.
-Alerting remains deterministic and reviewable.
+## Workflow
 
-## Architecture
+1. Order and Inventory produce request metrics, logs, and traces.
+2. Prometheus evaluates alert rules; Alertmanager groups and forwards alerts.
+3. Incident intake saves the incident and its investigation event atomically.
+4. The outbox publisher sends the event to Kafka.
+5. A worker queries a five-minute window ending when collection starts. It records
+   available metrics, bounded error logs, trace summaries, and collection failures.
+6. The report is saved with a notification outbox event. Grafana reads PostgreSQL;
+   the optional notification service consumes Kafka events and sends email.
+7. A resolved alert closes the incident and queues a recovery notification.
 
 ```mermaid
 flowchart TD
-    Workload["Gateway, Order, Inventory"] --> Telemetry["Metrics, logs, traces"]
-    Telemetry --> Prometheus
-    Prometheus --> Alertmanager
-    Alertmanager --> Intake["Incident intake"]
-    Intake --> Database["PostgreSQL"]
-    Intake --> Kafka["Kafka investigation topic"]
+    Alerts["Alertmanager"] --> Intake["Incident intake"]
+    Intake --> DB["PostgreSQL: incidents and outbox"]
+    DB --> Publisher["Outbox publisher"]
+    Publisher --> Kafka["Kafka"]
     Kafka --> Worker["Investigation worker"]
-    Worker --> Telemetry
-    Worker --> Model["Spring AI model or rules"]
-    Worker --> Database
-    Worker --> Notify["Kafka notification topic"]
-    Notify --> Email["Notification service"]
-    Database --> Grafana
-    Telemetry --> Grafana
+    Worker --> Sources["Prometheus, Loki, Tempo"]
+    Worker --> DB
+    Kafka --> Email["Optional email worker"]
+    DB --> Grafana["Grafana incident dashboard"]
 ```
 
-The incident state moves through:
+Incidents move from `RECEIVED` to `INVESTIGATING`, then `INVESTIGATED` or
+`INVESTIGATION_FAILED`. Resolution can happen at any stage. Late or repeated
+worker completion cannot reopen a resolved incident or replace a completed report.
 
-```text
-RECEIVED -> INVESTIGATING -> INVESTIGATED -> RESOLVED
-                         `-> INVESTIGATION_FAILED
-```
+## Structure
 
-Incident state and outgoing Kafka messages are written with a transactional
-outbox. This avoids saving an incident while losing its investigation event.
-Repeated firing and resolved webhooks are handled idempotently.
-
-## Project structure
-
-```text
-.
-├── api-gateway/             Routes workload and read-only incident requests
-├── order-service/           Creates orders and calls Inventory
-├── inventory-service/       Checks stock and hosts controlled failure modes
-├── ai-incident-analyzer/    Receives alerts, gathers evidence, runs analysis
-├── notification-service/    Sends incident and recovery emails
-├── ops/postgres/            Creates the three application databases
-├── api-gateway/docker/
-│   ├── prometheus/          Scrape configuration and alert rules
-│   ├── alertmanager/        Alert grouping and webhook routing
-│   ├── grafana/             Datasources and incident dashboard
-│   └── tempo/               Trace storage configuration
-├── docker-compose.yml       Complete local environment
-├── Dockerfile               Shared multi-stage Java image build
-└── pom.xml                  Maven reactor and shared dependency versions
-```
-
-The workload services exist to generate useful telemetry. They are kept small so
-the incident path remains the main subject of the repository.
-
-## Stack
-
-| Area | Technology |
+| Directory | Responsibility |
 | --- | --- |
-| Application | Java 25, Spring Boot, Spring Cloud Gateway |
-| Investigation | Spring AI with typed responses and a rule-based fallback |
-| Messaging | Kafka with two JSON event topics |
-| Storage | PostgreSQL, JPA, Flyway |
-| Metrics and alerts | Micrometer, Prometheus, Alertmanager |
-| Logs and traces | Loki, Tempo, Micrometer Tracing |
-| Dashboard | Grafana |
-| Local environment | Docker Compose |
+| `incident-service` | Alert intake, evidence collection, incident storage and outbox |
+| `notification-service` | Incident and recovery email |
+| `order-service`, `inventory-service` | Small workload for failure demonstrations |
+| `api-gateway` | Workload routes and read-only incident API |
+| `ops/observability` | Prometheus, Alertmanager, Grafana and Tempo configuration |
+| `ops/postgres` | Application database initialization |
+| `scripts` | Repeatable local smoke test |
 
-## Run locally
+Java 25, Spring Boot, Spring Cloud Gateway, Kafka, PostgreSQL, Flyway, Micrometer,
+Prometheus, Loki, Tempo, Grafana, and Docker Compose.
 
-You need Git and Docker with Docker Compose. Java and Maven are only required if
-you want to run or test modules outside Docker.
+## Run locally on Windows
 
-Clone the repository and create the local environment file:
+Install Docker Desktop with Compose and start it. Docker builds the Java services;
+you do not need Java or Maven installed for the Compose walkthrough.
 
-```bash
-git clone https://github.com/Abhay123abhi/micro-observe-kafka.git
-cd micro-observe-kafka
-cp .env.example .env
+From the repository directory in PowerShell:
+
+```powershell
+Copy-Item .env.example .env
 ```
 
-Set these values in `.env`:
+Choose `POSTGRES_PASSWORD` and `GRAFANA_ADMIN_PASSWORD` in `.env`, then run:
 
-```dotenv
-POSTGRES_PASSWORD=choose-a-local-password
-GRAFANA_ADMIN_PASSWORD=choose-a-grafana-password
-
-SMTP_USERNAME=your-smtp-user
-SMTP_PASSWORD=your-smtp-app-password
-NOTIFICATION_FROM=your-verified-sender@example.com
-ALERT_EMAIL_TO=your-email@example.com
-```
-
-Start the stack:
-
-```bash
-docker compose up --build -d
+```powershell
+docker compose config --quiet
+docker compose up --build -d --remove-orphans
 docker compose ps
 ```
 
-Wait until the Java services report `healthy`. The first build takes longer
-because Maven dependencies and container images must be downloaded.
+Do not overwrite an existing `.env` or change an existing database password without
+also updating that database. The initial build downloads several large images.
+Wait for the Java containers to become healthy before testing.
 
-| Service | Local URL |
+| Service | Local address |
 | --- | --- |
-| API Gateway | http://localhost:9000 |
 | Incident API | http://localhost:8084/api/incidents |
 | Grafana | http://localhost:3000 |
+| Gateway | http://localhost:9000 |
 | Prometheus | http://localhost:9090 |
 | Alertmanager | http://localhost:9093 |
-| Loki | http://localhost:3100 |
-| Tempo | http://localhost:3200 |
 
-Ports bind to `127.0.0.1` by default. Keep that setting for local use. The stack
-does not include the authentication and TLS required for public internet access.
+Everything published by Compose binds to localhost by default. Kafka and PostgreSQL
+are reachable only within the Docker network. Leave Kafka UI and email disabled
+while learning the core workflow, especially on an 8 GB laptop. If Docker is
+running out of memory, close other applications and check `docker stats`; the full
+observability stack still needs substantial memory without those optional services.
 
-Kafka UI is optional:
+## Retest the incident flow
 
-```bash
+Run the smoke test in PowerShell:
+
+```powershell
+.\scripts\smoke-test.ps1
+```
+
+It submits a synthetic webhook, checks duplicate firing alerts return the same ID,
+waits for Kafka processing, checks the evidence report, then verifies resolution
+and duplicate resolution. Each run uses a new fingerprint and attempts to resolve
+its test incident in `finally`.
+
+This checks intake, PostgreSQL, the outbox, Kafka, the worker, and the read API.
+An unavailable telemetry source appears in the report; it is not treated as proof
+of healthy service. This test does not prove Prometheus alert evaluation, SMTP
+delivery, or useful telemetry content. Use the failure demonstration below for that.
+
+## Demonstrate a real failure and recovery
+
+Add `SPRING_PROFILES_ACTIVE=observability,demo` to `.env` and recreate Inventory:
+
+```powershell
+docker compose up --build -d inventory-service
+docker compose exec postgres psql -U observe -d inventory_service -c "INSERT INTO t_inventory (sku_code, quantity) VALUES ('keyboard-001', 25) ON CONFLICT (sku_code) DO UPDATE SET quantity = 25;"
+```
+
+Wait for Inventory to become healthy. Generate about five minutes of slow requests:
+
+```powershell
+try {
+    Invoke-RestMethod -Method Post -Uri 'http://localhost:8082/demo/failures?latencyMillis=3000&failRequests=false'
+    1..100 | ForEach-Object {
+        Invoke-RestMethod -Uri 'http://localhost:8082/api/inventory?skuCode=keyboard-001&quantity=1' -TimeoutSec 15 | Out-Null
+    }
+} finally {
+    Invoke-RestMethod -Method Delete -Uri 'http://localhost:8082/demo/failures'
+}
+```
+
+While traffic runs, open Prometheus Alerts and watch `HighResponseLatency` become
+firing. Check Alertmanager, then Grafana's incident dashboard and the Incident API.
+The report should contain latency samples, with logs and traces when available.
+After resetting the failure, allow the five-minute metric window and alert grouping
+delays to clear before expecting `RESOLVED`. Remove `demo` from `.env` and recreate
+Inventory when finished. Failure injection is for local walkthroughs only.
+
+## Optional email and testing toggle
+
+`EMAIL_NOTIFICATIONS_ENABLED=false` is the default. The Compose `email` profile
+controls whether the notification service runs; the switch controls whether that
+running service sends mail. For repeated testing, keep the consumer running and
+mute sending with the switch.
+
+
+Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `NOTIFICATION_FROM`,
+and `ALERT_EMAIL_TO` in `.env`. For an SMTP server without authentication or STARTTLS,
+set `SMTP_AUTH=false` and `SMTP_STARTTLS=false` only for that trusted local server.
+
+```powershell
+docker compose --profile email up --build -d notification-service
+docker compose logs -f notification-service
+```
+
+To turn sending **on**, set this in `.env`:
+
+```dotenv
+EMAIL_NOTIFICATIONS_ENABLED=true
+```
+
+To turn sending **off**, change it to:
+
+```dotenv
+EMAIL_NOTIFICATIONS_ENABLED=false
+```
+
+After either change, recreate only the notification container:
+
+```powershell
+docker compose --profile email up -d --force-recreate notification-service
+```
+
+Use `--build` too when first installing this code change. `docker compose restart`
+does not reload environment changes. This is a restart-applied switch, not a live
+UI toggle. Turning it off cannot recall a message already accepted by SMTP.
+
+When off, the Kafka listener still consumes notifications, records
+`incident_notification_suppressed_total` and returns normally without rendering
+email or contacting SMTP. SMTP health checks are disabled too. Events successfully
+consumed and committed while muted are not deliberately held for later delivery.
+Stopping the consumer instead leaves a backlog subject to Kafka retention; enabling
+email before that backlog is drained can send older notifications.
+
+Test with the service running and sending off: run `.\scripts\smoke-test.ps1`, confirm
+no email arrives, and inspect
+`http://localhost:8083/actuator/metrics/incident.notification.suppressed`.
+Then turn sending on, recreate the container and rerun the smoke test with valid
+SMTP settings. Expect an investigation and recovery notification; duplicates are possible because delivery is at least once. The switch mutes all
+email; it does not add throttling, digests or durable delivery deduplication. A successful
+SMTP send means the server accepted the message, not that it reached the inbox.
+Never commit SMTP credentials. If you previously copied a real password from the
+old `.env.example`, revoke it and issue a new one.
+
+Kafka UI is also optional:
+
+```powershell
 docker compose --profile tools up -d kafka-ui
 ```
 
-Open http://localhost:8086 to inspect the two incident topics.
+Open http://localhost:8086. Prometheus still has a notification-service scrape
+target when email is disabled; that target will be down. The default unavailable
+service alert excludes this optional service.
 
-## AI configuration
+## Build and test
 
-The default is local rule-based analysis:
+For Java tests outside Docker, install JDK 25. The repository includes Maven Wrapper:
+
+```powershell
+.\mvnw.cmd -pl incident-service -am test
+.\mvnw.cmd verify
+```
+
+On Linux/macOS use `sh ./mvnw` instead. Full reactor verification requires Docker
+because workload and notification context tests use Testcontainers. GitHub Actions
+runs verification, validates Compose with optional profiles, and builds the incident
+container. Focused tests cover report sanitization, missing evidence, trace inclusion,
+late resolution races, and duplicate result notifications.
+
+## Upgrading from the old module
+
+The module and Compose service are now `incident-service`. Stop the previous stack
+with `docker compose --profile email down` before switching branches, then rebuild
+with `--remove-orphans`. Keep database volumes; do not use `down -v` to upgrade.
+
+Back up `incident_platform` first if its history matters. Flyway V1 is unchanged;
+V2 removes the obsolete `probable_root_cause` and `confidence` columns. Those two
+fields are also removed from the API and new notification events. Existing evidence,
+incident IDs, outbox entries, and lifecycle history are retained. The notification
+consumer ignores obsolete fields in queued older events. Upgrade both Java services
+together; rolling back to the old module requires restoring the database backup.
+
+Remove old provider variables from your local `.env`; they are no longer used.
+
+## Storage and growing data volumes
+
+Raw error logs, incident records and Kafka work events are different data types.
+A log line does not automatically create an incident: an alert rule must fire and
+Alertmanager must forward it. Multiple distinct fingerprints can still create many
+incidents; this is not cross-alert incident correlation.
+
+| Data | Persistent store | Retention clock and current behavior |
+| --- | --- | --- |
+| Resolved incident and its evidence report | PostgreSQL `incidents`, in `postgres-data` | Eligible for deletion **30 days after `resolved_at`**, not 30 days after creation. The report is stored on the same row and is deleted with it. |
+| Active incident, including completed investigation awaiting recovery | PostgreSQL `incidents` | **No automatic expiry** until the incident becomes `RESOLVED`. `INVESTIGATED` does not mean resolved. |
+| Failed investigation | PostgreSQL `incidents`, status `INVESTIGATION_FAILED` | **No automatic expiry** while unresolved. Its exception is logged; there is no separate durable failed-event/DLQ record. If later resolved, the 30-day resolved retention applies. |
+| Published investigation or notification outbox event | PostgreSQL `outbox_events`, in `postgres-data` | Eligible for deletion **7 days after `published_at`**. Publication means Kafka acknowledged the send and the application saved that timestamp; it does not confirm investigation completion or email delivery. |
+| Unpublished outbox event | PostgreSQL `outbox_events` | **No automatic expiry or backlog cap**. Kept for publication retries until successfully marked published. |
+| Investigation and notification topic messages | Kafka, in `kafka-data` | **Not explicitly configured by this repository**; effective broker/topic defaults apply. PostgreSQL's 7-day outbox policy does not control Kafka. Consumed messages are not immediately deleted. |
+| Raw application logs | Loki, in `loki-data` | **No explicit project retention policy**. Uses the image's local configuration; do not assume logs are removed after 7 or 30 days. |
+| Raw trace data | Tempo, in `tempo-data` | **No explicit project retention policy**. Local block storage uses component defaults; no guaranteed project-level duration or disk budget is declared. |
+| Metrics, including failure and notification counters | Prometheus, in `prometheus-data` | **7-day time retention** for stored samples. No size-based retention is configured. In-process counters are not a durable event history. |
+| Container stdout/stderr | Docker host logging storage | **No Compose rotation policy**; Docker daemon settings apply. This storage is separate from Loki. |
+| Sent email | Configured SMTP server and recipient mailbox | Provider/mailbox retention applies. The application has **no persistent email-delivery ledger**. Muted events are consumed without sending; Kafka retention still operates independently. |
+
+### Persistence versus retention
+
+Persistence means data survives an application/container restart because it is
+written to a database or disk-backed volume. Retention determines when stored data
+becomes eligible for cleanup. Neither is a backup or a guarantee against disk loss.
+
+The five-minute evidence collection window is a **query window**, not an expiry.
+For example, a report can contain five minutes of sampled telemetry and remain
+stored for weeks. The selected log text and trace summaries live in PostgreSQL;
+opening the full trace later still depends on Tempo retaining its original data.
+
+### Example: one incident over time
+
+- **Day 0:** an alert creates an incident and an investigation outbox event.
+- **Day 0:** Kafka acknowledges that event and `published_at` is saved. Its outbox
+  cleanup clock starts. The worker stores a report and queues a separate notification
+  event, with its own publication clock.
+- **Day 2:** a recovery webhook resolves the incident. Its 30-day clock starts now.
+- **After day 7:** an event published on day 0 becomes eligible for outbox cleanup,
+  even if the incident itself remains stored.
+- **After day 32:** the incident resolved on day 2, including its evidence snapshot,
+  becomes eligible for cleanup.
+
+If recovery never arrives, the incident does not automatically disappear on day 30.
+If Kafka publication never succeeds, the unpublished event does not automatically
+disappear on day 7. These cases require backlog monitoring and an operational policy.
+
+### Changing the database retention periods
+
+Set the following in `.env`:
 
 ```dotenv
-AI_ENABLED=false
-AI_CHAT_PROVIDER=none
+INCIDENT_RESOLVED_RETENTION_DAYS=30
+INCIDENT_OUTBOX_RETENTION_DAYS=7
 ```
 
-To use OpenAI through Spring AI:
+Then apply the settings to the incident container:
 
-```dotenv
-AI_ENABLED=true
-AI_CHAT_PROVIDER=openai
-OPENAI_API_KEY=your-key
-AI_MODEL=gpt-5-mini
+```powershell
+docker compose up -d --force-recreate incident-service
 ```
 
-An OpenAI-compatible provider can be used by setting `OPENAI_BASE_URL` and the
-provider's model name. Restart the analyzer after changing these values:
+Supported ranges are 1–3,650 days for resolved incidents and 1–365 days for published
+outbox entries. Lowering a period also affects existing records: older eligible
+records can be deleted on the next cleanup pass. Back up history you need first.
+These settings do not change Kafka, Loki, Tempo, Prometheus or mailbox retention.
 
-```bash
-docker compose up --build -d ai-incident-analyzer
-```
+Docker named volumes survive container restarts and `docker compose down`. On
+Docker Desktop they consume host-backed storage inside Docker's Linux environment.
+They are persistence, not backups, remote storage or unlimited capacity.
 
-Evidence sent to the provider is limited and redacted. Prompt and completion
-logging is disabled. Do not commit `.env`.
+### How much evidence is copied into an incident?
 
-## Trigger an incident
+The worker queries a five-minute window ending when collection starts. It requests
+up to 10 log lines by default (configurable up to 50), then the report selects up to
+3 error samples and 5 trace summaries alongside metrics and collection notes.
+Report lists are capped at 20 entries each, and each entry is capped at 1,000
+characters. These are character/list limits, not a guaranteed byte size. Full logs
+and trace spans are not copied into PostgreSQL. The saved snapshot can outlive the
+raw telemetry, but opening an old trace requires it still to exist in Tempo.
 
-Add the `demo` profile in `.env`:
+Database cleanup runs with a one-hour fixed delay after completion, initially five
+minutes after startup. Records become eligible at the configured age; deletion is
+not an exact TTL deadline and requires a healthy running incident service. Deleting
+rows also does not guarantee the database volume immediately shrinks on disk.
 
-```dotenv
-SPRING_PROFILES_ACTIVE=observability,demo
-```
+### What happens during a failure storm?
 
-Restart Inventory and insert a sample item:
+Repeated firing webhooks for one active fingerprint reuse its incident. Distinct
+fingerprints create separate incidents and outbox events. The publisher reads up
+to 100 pending events per pass; that bounds a publishing batch, not the total queue.
+Kafka decouples intake from investigation, so temporary bursts can accumulate as
+consumer lag. If incoming work keeps exceeding processing capacity, the backlog
+and investigation delay continue to grow.
 
-```bash
-docker compose up --build -d inventory-service
-docker compose exec postgres psql -U observe -d inventory_service \
-  -c "INSERT INTO t_inventory (sku_code, quantity) VALUES ('keyboard-001', 25) ON CONFLICT (sku_code) DO NOTHING;"
-```
+If Kafka is down, unpublished outbox entries accumulate in PostgreSQL. If workers
+are down, Kafka messages accumulate subject to Kafka retention. Retention can remove
+messages before a slow or stopped consumer processes them. Queueing therefore buys
+time; it does not guarantee unlimited buffering or prevent disk exhaustion.
 
-Enable five seconds of latency:
+The current setup handles a local demo and provides some bounded data handling.
+It has no measured high-volume capacity, per-service intake rate limit, complete
+storage budget, automatic archival or multi-instance worker coordination.
 
-```bash
-curl -X POST "http://localhost:8082/demo/failures?latencyMillis=5000&failRequests=false"
-```
+### Next steps before sustained high-volume use
 
-Generate traffic long enough for the alert rule to fire:
+These are proposed improvements, not enabled features:
 
-```bash
-for i in $(seq 1 40); do
-  curl --silent "http://localhost:9000/api/inventory?skuCode=keyboard-001&quantity=1" > /dev/null
-done
-```
+1. Configure and verify Loki compactor retention, explicit Tempo retention, Kafka
+   time/byte retention, Prometheus size retention and Docker log rotation. Preserve
+   free-space headroom; retention thresholds are not exact disk quotas.
+2. Monitor disk usage, oldest unpublished outbox age, pending outbox count, Kafka
+   consumer lag and investigation duration. Define operational thresholds before
+   accepting more load.
+3. Set an intake rate limit and an explicit overload response/retry policy. Add
+   bounded retries, a dead-letter queue and controlled replay for failed work.
+4. Define ownership and review/archival rules for unresolved and failed incidents.
+   Never silently delete pending investigations just to reduce disk use.
+5. Batch database cleanup and measure query/index performance. Consider time
+   partitioning, archival or object storage only when measured volume warrants it.
+6. Load-test the pipeline, then add partitions and workers together with safe
+   outbox claiming and durable idempotency before running multiple instances.
 
-Follow the result in this order:
+For capacity planning, estimate each store separately. For example, assuming
+1,000 distinct resolved incidents/day, 10 KB per stored report and 30 retained days,
+report content alone would be about 300 MB. This is illustrative, not a benchmark;
+indexes, outbox payloads, unresolved records, PostgreSQL overhead and raw telemetry
+are additional. Raw log volume can exceed incident-report volume by a large margin.
 
-1. Check the `HighResponseLatency` rule in Prometheus.
-2. Check the grouped alert in Alertmanager.
-3. Open the incident dashboard in Grafana.
-4. Call `GET http://localhost:8084/api/incidents`.
-5. Check the configured email inbox.
+Loki requires explicit retention configuration; filesystem storage does not delete
+logs simply because the disk is nearly full. See the [Loki retention documentation](https://grafana.com/docs/loki/latest/operations/storage/retention/)
+and [filesystem storage behavior](https://grafana.com/docs/loki/latest/configure/storage/).
+Kafka byte retention applies per partition, not to the entire cluster; see
+[Kafka topic configuration](https://kafka.apache.org/41/configuration/topic-configs/).
+Prometheus also needs room for ongoing writes and compaction beyond retained blocks;
+see [Prometheus storage guidance](https://prometheus.io/docs/prometheus/latest/storage/).
 
-Remove the failure:
+## Limits and follow-up work
 
-```bash
-curl -X DELETE http://localhost:8082/demo/failures
-```
+- The API accepts `scope=active|resolved|all`, `page`, and `size`, capped at 100.
+- Reports normalize text and bound lists; telemetry collection defaults to 10 log
+  lines, with a configurable limit of 50. Common secrets and email addresses are redacted.
+- Database expiry is eligibility-based: 30 days after resolution and 7 days after
+  successful outbox publication. See the storage table for records that never
+  automatically expire and for the independent telemetry retention policies.
+- Sequential repeated alerts are deduplicated by active fingerprint. A database
+  constraint prevents concurrent duplicate rows, but concurrent webhook requests
+  can still need retry. Resolved-before-firing and stale alert episodes need further work.
+- The outbox provides at-least-once publication, not exactly-once delivery. Run one
+  incident-service instance with this configuration. Multi-replica claiming and
+  durable notification deduplication are not implemented.
+- Investigation errors are stored as `INVESTIGATION_FAILED`. There is no DLQ/replay
+  interface yet. Check service logs; after fixing the cause, reset and retrigger the
+  demo. Partial telemetry failures remain visible in the report.
+- The collection window ends at worker execution time. Replaying an old alert does
+  not reconstruct its historical window. Deployment correlation and richer incident
+  lifecycle management are follow-up work.
 
-When the Prometheus rule clears, Alertmanager sends a resolved webhook. The same
-incident is marked `RESOLVED` and a recovery email is queued.
+## Design decisions and demonstration
 
-## Data limits and retention
+The main engineering decisions are the transactional outbox, asynchronous evidence
+collection, active-alert deduplication, terminal incident state protection and
+separate storage lifecycles for incident reports and raw telemetry. Kafka provides
+buffering and independent processing; it does not eliminate overload or duplicates.
 
-The incident API is paginated and bounded. Use:
+A useful walkthrough demonstrates the behavior rather than only showing dashboards:
 
-```text
-GET /api/incidents?scope=active&page=0&size=20
-```
+1. Run the smoke test to show one incident ID reused for repeated active alerts,
+   an evidence report, and recovery.
+2. Run the latency demonstration to show a real Prometheus alert becoming an
+   incident and then resolving. Inspect the report and the source telemetry.
+3. Explain what happens if Kafka or a telemetry source is unavailable. For a manual
+   outage exercise, compare unpublished outbox rows before and after broker recovery;
+   distinguish durable pending work from partial evidence collection.
+4. Show the regression tests for a late worker result after resolution and the
+   notification sending switch. Do not describe these as exactly-once delivery.
+5. Explain the retention table, unresolved-record growth, and the limits of a
+   single-node Compose environment.
 
-`scope` accepts `active`, `resolved`, or `all`. The configured maximum page size is
-100, so callers cannot accidentally fetch an unbounded incident history.
+Before expanding the project, prioritize explicit storage budgets and backlog
+metrics, then bounded retries with a dead-letter queue and controlled replay.
+Deployment change correlation can be a later feature: correlate a real deployment
+record with a service incident while clearly separating timing from causation.
+These are future milestones, not current functionality. Add measured throughput
+and recovery results only after running and recording reproducible load tests.
 
-Repeated alerts are deduplicated while active by their Alertmanager fingerprint. The
-database retains resolved incidents for 30 days and successfully published outbox
-events for 7 days by default. Override these local defaults in `.env` with
-`INCIDENT_RESOLVED_RETENTION_DAYS`, `INCIDENT_OUTBOX_RETENTION_DAYS`, and
-`INCIDENT_MAXIMUM_PAGE_SIZE`.
+## Local or deployed?
 
-Evidence is also bounded: investigations collect at most 10 log lines by default
-and the configuration permits at most 50. This limits database growth and avoids
-sending an excessive amount of telemetry to an AI provider.
+Local is sufficient for development and a portfolio walkthrough. Include the
+architecture, passing test output, and a short failure-to-recovery recording.
+A permanent public deployment is optional.
+
+For a hosted demonstration, a Linux VM running Docker Compose is the simplest
+extension of this setup. DigitalOcean Docker Droplets or Hetzner Cloud are options.
+As an initial planning estimate, use 4 vCPU / 8 GB RAM and measure actual usage;
+this repository does not include a capacity benchmark. Build services sequentially
+if memory is tight. This is a backend stack, not a static site suitable for Netlify.
+
+Start with a private demo accessed through SSH port forwarding; keep the localhost
+bindings. Do not expose Kafka, PostgreSQL, telemetry APIs, or demo failure endpoints.
+Public access requires authentication, TLS, firewall rules, secret management,
+backups and a recovery plan. This single-node Compose stack is not highly available.
 
 ## Useful commands
 
-```bash
-# Follow application logs
-docker compose logs -f api-gateway order-service inventory-service ai-incident-analyzer notification-service
-
-# Check container health
+```powershell
+docker compose logs --tail=200 incident-service
+docker compose logs -f inventory-service order-service
 docker compose ps
-
-# Build and run all Java tests outside Docker
-sh ./mvnw verify
-
-# Stop containers but keep data
-docker compose down
-
-# Remove containers and local data
-docker compose down -v
+docker stats
+docker compose --profile email --profile tools down
 ```
 
-Use the final command only when you want a clean PostgreSQL, Kafka, Prometheus,
-Loki, Tempo, and Grafana state.
-
-## Troubleshooting
-
-**A Java service stays unhealthy**
-
-```bash
-docker compose logs --tail=200 <service-name>
-```
-
-Check database credentials, SMTP values, and whether PostgreSQL and Kafka are
-healthy.
-
-**No incident appears**
-
-Confirm that the Prometheus rule is firing, then check Alertmanager and analyzer
-logs. Alert rules contain a `for` duration, so a short burst may not create an
-incident.
-
-**No AI request is made**
-
-Confirm `AI_ENABLED=true`, `AI_CHAT_PROVIDER=openai`, and a valid provider key.
-When provider configuration fails, the analyzer falls back to the rule-based
-implementation.
-
-**No email arrives**
-
-Use an SMTP app password when the provider requires one. Check
-`notification-service` logs for authentication or sender-verification errors.
-
-## Operational notes
-
-- Alert labels are validated before they are used in telemetry queries.
-- Logs are bounded and redact common credentials and email addresses.
-- AI output is normalized before it is stored or included in email.
-- Outbound HTTP clients use connection and read timeouts.
-- Java containers run as a non-root user with Linux capabilities removed.
-- GitHub Actions builds and tests the reactor and checks dependency changes.
-- Dependabot watches Maven, container images, Compose, and workflow actions.
-
-For public deployment, add authentication, TLS, managed secrets, protected Kafka
-and PostgreSQL connections, backup policies, and retention limits. The supplied
-Compose file is intended for local development and project walkthroughs.
+`down` stops containers and keeps volumes. Avoid `down -v` unless you intentionally
+want to delete the local databases and telemetry history.

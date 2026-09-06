@@ -34,8 +34,8 @@ jobs:
           export SMTP_PASSWORD="$(openssl rand -hex 24)"
           export NOTIFICATION_FROM="ci@example.invalid"
           export ALERT_EMAIL_TO="operations@example.invalid"
-          docker compose --profile tools config --quiet
-          docker compose --profile tools config --format json | python -c 'import json, sys; services = json.load(sys.stdin)["services"]; names = ("inventory-service", "order-service", "ai-incident-analyzer", "notification-service", "api-gateway"); required = ("interval", "timeout", "retries", "start_period"); missing = {name: [key for key in required if key not in services[name]["healthcheck"]] for name in names}; assert not any(missing.values()), f"Missing Java health-check settings: {missing}"'
+          docker compose --profile tools --profile email config --quiet
+          docker compose --profile tools --profile email config --format json | python -c 'import json, sys; services = json.load(sys.stdin)["services"]; names = ("inventory-service", "order-service", "incident-service", "notification-service", "api-gateway"); required = ("interval", "timeout", "retries", "start_period"); missing = {name: [key for key in required if key not in services[name]["healthcheck"]] for name in names}; assert not any(missing.values()), f"Missing Java health-check settings: {missing}"'
 
       - name: Build application container
-        run: docker build --build-arg SERVICE=ai-incident-analyzer --tag observe-ai-analyzer:ci .
+        run: docker build --build-arg SERVICE=incident-service --tag observe-incident:ci .

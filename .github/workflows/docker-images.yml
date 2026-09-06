@@ -20,7 +20,7 @@ jobs:
           - api-gateway
           - inventory-service
           - order-service
-          - ai-incident-analyzer
+          - incident-service
           - notification-service
 
     steps:

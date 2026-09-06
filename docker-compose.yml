@@ -103,11 +103,11 @@ services:
       <<: *java-healthcheck
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8081/actuator/health"]
 
-  ai-incident-analyzer:
+  incident-service:
     <<: *java-service
     build:
       context: .
-      args: { SERVICE: ai-incident-analyzer }
+      args: { SERVICE: incident-service }
     mem_limit: 448m
     ports: ["${BIND_ADDRESS:-127.0.0.1}:8084:8084"]
     environment:
@@ -119,12 +119,10 @@ services:
       PROMETHEUS_URL: http://prometheus:9090
       LOKI_URL: http://loki:3100
       TEMPO_URL: http://tempo:3200
+      INCIDENT_MAXIMUM_PAGE_SIZE: ${INCIDENT_MAXIMUM_PAGE_SIZE:-100}
+      INCIDENT_RESOLVED_RETENTION_DAYS: ${INCIDENT_RESOLVED_RETENTION_DAYS:-30}
+      INCIDENT_OUTBOX_RETENTION_DAYS: ${INCIDENT_OUTBOX_RETENTION_DAYS:-7}
       GRAFANA_URL: ${GRAFANA_PUBLIC_URL:-http://localhost:3000}
-      AI_ENABLED: ${AI_ENABLED:-false}
-      AI_CHAT_PROVIDER: ${AI_CHAT_PROVIDER:-none}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-unused}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
-      AI_MODEL: ${AI_MODEL:-gpt-5-mini}
     depends_on:
       broker: { condition: service_healthy }
       prometheus: { condition: service_started }
@@ -135,6 +133,7 @@ services:
 
   notification-service:
     <<: *java-service
+    profiles: [email]
     build:
       context: .
       args: { SERVICE: notification-service }
@@ -143,12 +142,15 @@ services:
     environment:
       <<: *java-environment
       KAFKA_BOOTSTRAP_SERVERS: broker:29092
+      EMAIL_NOTIFICATIONS_ENABLED: ${EMAIL_NOTIFICATIONS_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:?Set SMTP_USERNAME in .env}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:?Set SMTP_PASSWORD in .env}
-      NOTIFICATION_FROM: ${NOTIFICATION_FROM:?Set NOTIFICATION_FROM in .env}
-      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:?Set ALERT_EMAIL_TO in .env}
+      SMTP_AUTH: ${SMTP_AUTH:-true}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      NOTIFICATION_FROM: ${NOTIFICATION_FROM:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
     depends_on:
       broker: { condition: service_healthy }
     healthcheck:
@@ -166,11 +168,11 @@ services:
       <<: *java-environment
       ORDER_SERVICE_URL: http://order-service:8081
       INVENTORY_SERVICE_URL: http://inventory-service:8082
-      INCIDENT_SERVICE_URL: http://ai-incident-analyzer:8084
+      INCIDENT_SERVICE_URL: http://incident-service:8084
     depends_on:
       order-service: { condition: service_healthy }
       inventory-service: { condition: service_healthy }
-      ai-incident-analyzer: { condition: service_healthy }
+      incident-service: { condition: service_healthy }
     healthcheck:
       <<: *java-healthcheck
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:9000/actuator/health"]
@@ -181,8 +183,8 @@ services:
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
     ports: ["${BIND_ADDRESS:-127.0.0.1}:9090:9090"]
     volumes:
-      - ./api-gateway/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./api-gateway/docker/prometheus/alerts.yml:/etc/prometheus/rules/alerts.yml:ro
+      - ./ops/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/observability/prometheus/alerts.yml:/etc/prometheus/rules/alerts.yml:ro
       - prometheus-data:/prometheus
     networks: [backend]
 
@@ -192,7 +194,7 @@ services:
     command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
     ports: ["${BIND_ADDRESS:-127.0.0.1}:9093:9093"]
     volumes:
-      - ./api-gateway/docker/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./ops/observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager-data:/alertmanager
     networks: [backend]
 
@@ -210,7 +212,7 @@ services:
     command: ["-config.file=/etc/tempo.yaml"]
     ports: ["${BIND_ADDRESS:-127.0.0.1}:3200:3200", "${BIND_ADDRESS:-127.0.0.1}:9411:9411"]
     volumes:
-      - ./api-gateway/docker/tempo/tempo.yml:/etc/tempo.yaml:ro
+      - ./ops/observability/tempo/tempo.yml:/etc/tempo.yaml:ro
       - tempo-data:/tmp/tempo
     networks: [backend]
 
@@ -227,8 +229,8 @@ services:
       GF_SECURITY_ALLOW_EMBEDDING: "false"
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
-      - ./api-gateway/docker/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
-      - ./api-gateway/docker/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./ops/observability/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./ops/observability/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
       - grafana-data:/var/lib/grafana
     networks: [backend]
 

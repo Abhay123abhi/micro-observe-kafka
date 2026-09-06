@@ -37,6 +37,12 @@ public class NotificationService {
 
     @KafkaListener(topics = "${incident.topic:incident-notification}")
     public void listen(IncidentEvent incident) {
+        if (!properties.enabled()) {
+            meters.counter("incident.notification.suppressed", "service", incident.service(),
+                    "status", incident.status()).increment();
+            log.debug("Email disabled; skipped notification for incident {}", incident.incidentId());
+            return;
+        }
         log.info("Processing {} incident {} for {}", incident.status(), incident.incidentId(), incident.service());
         MimeMessagePreparator messagePreparator = mimeMessage -> {
             var messageHelper = new MimeMessageHelper(mimeMessage, StandardCharsets.UTF_8.name());
@@ -47,7 +53,6 @@ public class NotificationService {
 
             var context = new Context();
             context.setVariable("incident", incident);
-            context.setVariable("confidencePercent", Math.round(incident.confidence() * 100));
             context.setVariable("year", Year.now().getValue());
 
             messageHelper.setText(templateEngine.process("incident-alert", context), true);

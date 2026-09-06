@@ -67,7 +67,7 @@ public class Routes {
 
     @Bean
     public RouterFunction<ServerResponse> incidentServiceRoute() {
-        return GatewayRouterFunctions.route("incident_analyzer")
+        return GatewayRouterFunctions.route("incident_service")
                 .route(RequestPredicates.path("/api/incidents/**")
                         .and(RequestPredicates.method(HttpMethod.GET)), HandlerFunctions.http())
                 .before(uri(services.incident().url()))
