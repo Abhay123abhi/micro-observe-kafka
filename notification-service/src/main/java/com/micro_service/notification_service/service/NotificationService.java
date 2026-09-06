@@ -47,7 +47,6 @@ public class NotificationService {
 
             var context = new Context();
             context.setVariable("incident", incident);
-            context.setVariable("confidencePercent", Math.round(incident.confidence() * 100));
             context.setVariable("year", Year.now().getValue());
 
             messageHelper.setText(templateEngine.process("incident-alert", context), true);

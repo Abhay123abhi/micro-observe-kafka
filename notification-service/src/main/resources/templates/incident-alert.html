@@ -19,11 +19,6 @@
                     <span th:text="${incident.service()}">order-service</span>
                 </p>
             </td></tr>
-            <tr><td style="padding:30px 36px 10px;">
-                <p style="margin:0 0 8px;font-size:12px;text-transform:uppercase;color:#64748b;">Probable root cause</p>
-                <p th:text="${incident.probableRootCause()}" style="margin:0;font-size:16px;line-height:1.7;">Incident details</p>
-                <p style="margin:12px 0;color:#536079;">Confidence: <strong th:text="|${confidencePercent}%|">90%</strong></p>
-            </td></tr>
             <tr><td style="padding:12px 36px;">
                 <h2 style="margin:0 0 10px;font-size:17px;">Supporting evidence</h2>
                 <ul style="padding-left:20px;line-height:1.8;color:#536079;">
