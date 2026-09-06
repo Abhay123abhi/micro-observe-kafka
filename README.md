@@ -264,15 +264,66 @@ A log line does not automatically create an incident: an alert rule must fire an
 Alertmanager must forward it. Multiple distinct fingerprints can still create many
 incidents; this is not cross-alert incident correlation.
 
-| Data | Stored in | Current limits and lifecycle |
+| Data | Persistent store | Retention clock and current behavior |
 | --- | --- | --- |
-| Incident state and evidence snapshot | PostgreSQL `incidents`, in `postgres-data` | Indexed incident metadata plus JSONB evidence, affected-service and recommendation lists. Resolved records are eligible for deletion 30 days after resolution. Active and investigation-failed records are not automatically expired. |
-| Outgoing investigation and notification events | PostgreSQL `outbox_events`, in `postgres-data` | JSON payload, topic, aggregate ID and publication timestamps. Published events are eligible for deletion after 7 days. Unpublished events are retained for retry, with no backlog cap. |
-| Investigation and notification messages | Kafka topics, in `kafka-data` | Retained independently of PostgreSQL. This repository does not explicitly set topic retention or byte limits; broker/topic defaults apply. Consumption does not immediately delete a message. |
-| Raw application logs | Loki, in `loki-data` | The stack uses the image's local configuration. No project-specific retention/compactor policy or disk budget is configured. |
-| Raw trace data | Tempo, in `tempo-data` | Local block storage. No project-specific trace retention or disk budget is configured; component defaults apply. |
-| Time-series metrics | Prometheus, in `prometheus-data` | Explicit 7-day time retention. No size-based retention is configured. |
-| Container stdout/stderr | Docker logging storage on the host | Separate from Loki. No rotation policy is configured in Compose; Docker daemon settings apply. |
+| Resolved incident and its evidence report | PostgreSQL `incidents`, in `postgres-data` | Eligible for deletion **30 days after `resolved_at`**, not 30 days after creation. The report is stored on the same row and is deleted with it. |
+| Active incident, including completed investigation awaiting recovery | PostgreSQL `incidents` | **No automatic expiry** until the incident becomes `RESOLVED`. `INVESTIGATED` does not mean resolved. |
+| Failed investigation | PostgreSQL `incidents`, status `INVESTIGATION_FAILED` | **No automatic expiry** while unresolved. Its exception is logged; there is no separate durable failed-event/DLQ record. If later resolved, the 30-day resolved retention applies. |
+| Published investigation or notification outbox event | PostgreSQL `outbox_events`, in `postgres-data` | Eligible for deletion **7 days after `published_at`**. Publication means Kafka acknowledged the send and the application saved that timestamp; it does not confirm investigation completion or email delivery. |
+| Unpublished outbox event | PostgreSQL `outbox_events` | **No automatic expiry or backlog cap**. Kept for publication retries until successfully marked published. |
+| Investigation and notification topic messages | Kafka, in `kafka-data` | **Not explicitly configured by this repository**; effective broker/topic defaults apply. PostgreSQL's 7-day outbox policy does not control Kafka. Consumed messages are not immediately deleted. |
+| Raw application logs | Loki, in `loki-data` | **No explicit project retention policy**. Uses the image's local configuration; do not assume logs are removed after 7 or 30 days. |
+| Raw trace data | Tempo, in `tempo-data` | **No explicit project retention policy**. Local block storage uses component defaults; no guaranteed project-level duration or disk budget is declared. |
+| Metrics, including failure and notification counters | Prometheus, in `prometheus-data` | **7-day time retention** for stored samples. No size-based retention is configured. In-process counters are not a durable event history. |
+| Container stdout/stderr | Docker host logging storage | **No Compose rotation policy**; Docker daemon settings apply. This storage is separate from Loki. |
+| Sent email | Configured SMTP server and recipient mailbox | Provider/mailbox retention applies. The application has **no persistent email-delivery ledger**. Muted events are consumed without sending; Kafka retention still operates independently. |
+
+### Persistence versus retention
+
+Persistence means data survives an application/container restart because it is
+written to a database or disk-backed volume. Retention determines when stored data
+becomes eligible for cleanup. Neither is a backup or a guarantee against disk loss.
+
+The five-minute evidence collection window is a **query window**, not an expiry.
+For example, a report can contain five minutes of sampled telemetry and remain
+stored for weeks. The selected log text and trace summaries live in PostgreSQL;
+opening the full trace later still depends on Tempo retaining its original data.
+
+### Example: one incident over time
+
+- **Day 0:** an alert creates an incident and an investigation outbox event.
+- **Day 0:** Kafka acknowledges that event and `published_at` is saved. Its outbox
+  cleanup clock starts. The worker stores a report and queues a separate notification
+  event, with its own publication clock.
+- **Day 2:** a recovery webhook resolves the incident. Its 30-day clock starts now.
+- **After day 7:** an event published on day 0 becomes eligible for outbox cleanup,
+  even if the incident itself remains stored.
+- **After day 32:** the incident resolved on day 2, including its evidence snapshot,
+  becomes eligible for cleanup.
+
+If recovery never arrives, the incident does not automatically disappear on day 30.
+If Kafka publication never succeeds, the unpublished event does not automatically
+disappear on day 7. These cases require backlog monitoring and an operational policy.
+
+### Changing the database retention periods
+
+Set the following in `.env`:
+
+```dotenv
+INCIDENT_RESOLVED_RETENTION_DAYS=30
+INCIDENT_OUTBOX_RETENTION_DAYS=7
+```
+
+Then apply the settings to the incident container:
+
+```powershell
+docker compose up -d --force-recreate incident-service
+```
+
+Supported ranges are 1–3,650 days for resolved incidents and 1–365 days for published
+outbox entries. Lowering a period also affects existing records: older eligible
+records can be deleted on the next cleanup pass. Back up history you need first.
+These settings do not change Kafka, Loki, Tempo, Prometheus or mailbox retention.
 
 Docker named volumes survive container restarts and `docker compose down`. On
 Docker Desktop they consume host-backed storage inside Docker's Linux environment.
@@ -349,9 +400,9 @@ see [Prometheus storage guidance](https://prometheus.io/docs/prometheus/latest/s
 - The API accepts `scope=active|resolved|all`, `page`, and `size`, capped at 100.
 - Reports normalize text and bound lists; telemetry collection defaults to 10 log
   lines, with a configurable limit of 50. Common secrets and email addresses are redacted.
-- Resolved incidents expire after 30 days; published outbox entries after 7 days.
-  Override these with `INCIDENT_RESOLVED_RETENTION_DAYS` and
-  `INCIDENT_OUTBOX_RETENTION_DAYS`.
+- Database expiry is eligibility-based: 30 days after resolution and 7 days after
+  successful outbox publication. See the storage table for records that never
+  automatically expire and for the independent telemetry retention policies.
 - Sequential repeated alerts are deduplicated by active fingerprint. A database
   constraint prevents concurrent duplicate rows, but concurrent webhook requests
   can still need retry. Resolved-before-firing and stale alert episodes need further work.
@@ -364,6 +415,34 @@ see [Prometheus storage guidance](https://prometheus.io/docs/prometheus/latest/s
 - The collection window ends at worker execution time. Replaying an old alert does
   not reconstruct its historical window. Deployment correlation and richer incident
   lifecycle management are follow-up work.
+
+## Design decisions and demonstration
+
+The main engineering decisions are the transactional outbox, asynchronous evidence
+collection, active-alert deduplication, terminal incident state protection and
+separate storage lifecycles for incident reports and raw telemetry. Kafka provides
+buffering and independent processing; it does not eliminate overload or duplicates.
+
+A useful walkthrough demonstrates the behavior rather than only showing dashboards:
+
+1. Run the smoke test to show one incident ID reused for repeated active alerts,
+   an evidence report, and recovery.
+2. Run the latency demonstration to show a real Prometheus alert becoming an
+   incident and then resolving. Inspect the report and the source telemetry.
+3. Explain what happens if Kafka or a telemetry source is unavailable. For a manual
+   outage exercise, compare unpublished outbox rows before and after broker recovery;
+   distinguish durable pending work from partial evidence collection.
+4. Show the regression tests for a late worker result after resolution and the
+   notification sending switch. Do not describe these as exactly-once delivery.
+5. Explain the retention table, unresolved-record growth, and the limits of a
+   single-node Compose environment.
+
+Before expanding the project, prioritize explicit storage budgets and backlog
+metrics, then bounded retries with a dead-letter queue and controlled replay.
+Deployment change correlation can be a later feature: correlate a real deployment
+record with a service incident while clearly separating timing from causation.
+These are future milestones, not current functionality. Add measured throughput
+and recovery results only after running and recording reproducible load tests.
 
 ## Local or deployed?
 
